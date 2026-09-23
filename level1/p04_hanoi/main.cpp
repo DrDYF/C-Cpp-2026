@@ -1,6 +1,5 @@
 #include <iostream>
 using namespace std;
-// 汉诺塔递归函数
 // n:    待移动的圆盘数
 // from: 起始柱
 // to:   目标柱
