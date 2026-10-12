@@ -29,7 +29,7 @@ struct Level {
     int px = 0, py = 0;         // 玩家坐标（列 x，行 y）
     int width = 0, height = 0;
     int steps = 0;              // 本关已经走了多少步
-    int playerCount = 0;        // 地图里的玩家个数，正常应当恰好是 1
+    int playerCount = 0;        // 玩家个数，正常是 1
     int boxCount = 0;           // 箱子个数
     int goalCount = 0;          // 目标点个数
 };
@@ -133,7 +133,7 @@ bool loadLevel(const string& path, Level& lv) {
     lv.height = (int)lines.size();
     lv.width = 0;
     for (const string& s : lines) lv.width = max(lv.width, (int)s.size());
-    if (lv.width == 0) return false;            // 全是空行，等于没有地图
+    if (lv.width == 0) return false;            // 整张图都是空行
 
     lv.ground.assign(lv.height, string(lv.width, ' '));
     lv.things.assign(lv.height, string(lv.width, ' '));
@@ -161,17 +161,13 @@ bool loadLevel(const string& path, Level& lv) {
 
 // ---------- 地图校验 ----------
 
-// 检查一张地图是不是能玩。没问题返回 true；
-// 有问题返回 false，并把原因写进 reason，方便提示玩家到底哪里不对。
-//
-// 一张能玩的地图至少要满足：
-//   1. 地图不是空的；
-//   2. 玩家有且只有一个（没有玩家就没法操作，两个玩家不知道该听谁的）；
-//   3. 至少有一个箱子，而且箱子数和目标点数相等
-//      —— 少一个箱子永远推不满，多一个箱子永远没地方放；
-//   4. 地图是封闭的：从玩家出发走遍所有能走到的地板，不能摸到地图边界
-//      —— 否则玩家一步就能走出地图，掉进未知区域；
-//   5. 每个箱子和每个目标点都得在玩家能走到的区域里，不然这关无解。
+// 关卡文件是手写的，不一定靠谱，先检查一遍再玩。
+// 有问题就返回 false，原因写在 reason 里。
+// 看这几样：
+//   玩家有且只有一个（没有就没法操作，两个不知道听谁的）；
+//   箱子数和目标点数相等（少了永远推不满，多了没地方放）；
+//   地图是封闭的（从玩家出发走一圈，不能摸到地图边界）；
+//   箱子和目标点都在玩家能走到的地方，不然这关无解。
 bool validateLevel(const Level& lv, string& reason) {
     if (lv.width <= 0 || lv.height <= 0) {
         reason = "地图是空的";
@@ -191,7 +187,7 @@ bool validateLevel(const Level& lv, string& reason) {
         return false;
     }
 
-    // 从玩家出发做一次深度优先搜索，把能走到的地板都标记出来
+    // 从玩家出发走一遍，把能走到的地板都标出来
     vector<vector<char>> seen(lv.height, vector<char>(lv.width, 0));
     vector<pair<int, int>> stack;
     stack.push_back(make_pair(lv.px, lv.py));
@@ -206,7 +202,7 @@ bool validateLevel(const Level& lv, string& reason) {
         stack.pop_back();
         int x = cur.first, y = cur.second;
 
-        // 摸到地图边界，说明这块区域没有用墙围起来
+        // 摸到地图边界，说明这块地方没用墙围起来
         if (x == 0 || y == 0 || x == lv.width - 1 || y == lv.height - 1)
             sealed = false;
 
@@ -225,7 +221,7 @@ bool validateLevel(const Level& lv, string& reason) {
         return false;
     }
 
-    // 箱子和目标点必须都落在玩家能走到的范围内，否则这关无解
+    // 箱子和目标点都得在玩家能走到的范围里
     for (int y = 0; y < lv.height; ++y) {
         for (int x = 0; x < lv.width; ++x) {
             if (lv.things[y][x] == '$' && !seen[y][x]) {
@@ -333,14 +329,14 @@ int main() {
         string path = gameDir + "/levels/level" + to_string(no) + ".txt";
         Level lv;
 
-        // 先读，再校验；地图不合法就当场报错退出，绝不硬着头皮往下玩
+        // 先读再校验，地图不对就报错退出
         if (!loadLevel(path, lv)) {
             cout << "读不了关卡文件 " << path << '\n';
             return 1;
         }
         string reason;
         if (!validateLevel(lv, reason)) {
-            cout << "关卡文件 " << path << " 校验不通过：" << reason << '\n';
+            cout << "关卡文件 " << path << " 有问题：" << reason << '\n';
             return 1;
         }
 

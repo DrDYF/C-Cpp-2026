@@ -11,15 +11,13 @@ using namespace std;
  *
  * Animal 是抽象基类，只规定“叫什么”和“怎么叫”。
  * 具体叫声交给各个子类去实现，Zoo 只管拿着 Animal 指针挨个调用 ——
- * 所以以后加新动物，Zoo 的代码一行都不用改（这就是“开闭原则”：
- * 对扩展开放，对修改关闭）。
+ * 所以以后加新动物，Zoo 的代码一行都不用改。
  *
- * Zoo 用 unique_ptr 管理动物，谁进园谁负责生命周期，
- * 出了作用域自动析构，不需要手写 delete，也不会漏删。
+ * 动物用 unique_ptr 存着，不用自己 delete，也不会漏删。
  */
 class Animal {
 public:
-    virtual ~Animal() = default;            // 基类析构必须是虚的，否则 delete 会漏掉子类部分
+    virtual ~Animal() = default;            // 基类析构得是虚的，不然删子类对象时析构不全
     virtual string name() const = 0;
     virtual string sound() const = 0;
 };
@@ -53,7 +51,7 @@ public:
 
 class Zoo {
 public:
-    // 收下一只动物。传进来的空指针直接拒绝，免得后面点名时崩掉。
+    // 收下一只动物。空指针直接拒掉，免得点名时崩掉。
     bool add(unique_ptr<Animal> animal) {
         if (!animal) return false;
         animals_.push_back(move(animal));
@@ -63,7 +61,7 @@ public:
     // 让园里所有动物依次吼一次
     void rollCall() const {
         if (animals_.empty()) {
-            cout << "动物园里还没有动物，点名跳过。\n";
+            cout << "动物园里还没有动物，跳过。\n";
             return;
         }
         cout << "动物园点名，共 " << animals_.size() << " 只：\n";
@@ -80,7 +78,7 @@ private:
 int main() {
     Zoo zoo;
 
-    // 空园也能正常点名，不会打印出一句没头没尾的“共 0 只”
+    // 空园也点一次名，不然会打印出一句没头没尾的“共 0 只”
     zoo.rollCall();
 
     zoo.add(make_unique<Dog>());
@@ -90,11 +88,11 @@ int main() {
 
     // 塞个空指针进来也不会出事
     if (!zoo.add(nullptr))
-        cout << "拒绝了一个空的动物指针。\n";
+        cout << "空的动物指针，没收。\n";
 
     zoo.rollCall();
 
-    // 上面新增鸟和狼狗，Zoo 类一个字都没改 —— 这就是多态的好处
+    // 上面加的鸟和狼狗，Zoo 类一个字都没动
     cout << "园里一共 " << zoo.size() << " 只动物。\n";
     return 0;
 }

@@ -25,12 +25,12 @@ string dataFilePath() {
 }
 
 // 文件里一行存一条记录：型号 数量
-// 读的时候顺便报告格式不对的行，免得数据悄悄丢了还不知道
+// 读的时候顺手把格式不对的行报出来，免得数据悄悄丢了还不知道
 bool loadStock(const string& path, vector<Item>& stock) {
     ifstream fin(path);
     if (!fin) {
         cout << "还没用过这个程序吧？先按空仓库来。\n";
-        return true;                      // 第一次运行没有文件，不算错误
+        return true;                      // 第一次跑没有文件，不算出错
     }
 
     string line;
@@ -40,11 +40,10 @@ bool loadStock(const string& path, vector<Item>& stock) {
         if (line.empty()) continue;
 
         Item item;
-        size_t pos = 0;
         try {
-            pos = (size_t)line.find(' ');
+            size_t pos = line.find(' ');
             item.model = line.substr(0, pos);
-            item.quantity = stoll(line.substr(pos + 1));   // 数量超出 long long 会抛异常
+            item.quantity = stoll(line.substr(pos + 1));   // 数字太大这里会抛异常
         } catch (const exception&) {
             ++badLines;
             cout << "第 " << lineNo << " 行读不出来，已跳过：" << line << '\n';
@@ -62,17 +61,17 @@ bool loadStock(const string& path, vector<Item>& stock) {
     return true;
 }
 
-// 保存库存。写成功返回 true，写失败返回 false ——
-// 调用方必须看返回值再决定要不要提示“已保存”，不能想当然。
+// 保存库存。写成功返回 true，失败返回 false，
+// 调用方看着返回值决定要不要提示“已保存”
 bool saveStock(const string& path, const vector<Item>& stock) {
     ofstream fout(path, ios::trunc);
-    if (!fout) return false;              // 打不开（没权限、路径不存在……）
+    if (!fout) return false;              // 打不开：没权限、路径不对之类
 
     for (const Item& item : stock)
         fout << item.model << ' ' << item.quantity << '\n';
 
     fout.flush();
-    if (!fout) return false;              // 写到一半失败（磁盘满之类）
+    if (!fout) return false;              // 写到一半失败了（比如磁盘满）
     fout.close();
     return !fout.fail();                  // 关闭时也会把最后的错误暴露出来
 }
@@ -121,8 +120,7 @@ void stockIn(vector<Item>& stock) {
         return;
     }
 
-    // 累加之前先判断会不会溢出。等溢出了再发现就晚了 ——
-    // 有符号整数溢出是未定义行为，数量会直接变成负数，账就彻底乱了。
+    // 先看看加上去会不会溢出，不然数量会翻成负数
     const long long maxQuantity = numeric_limits<long long>::max();
     if (stock[idx].quantity > maxQuantity - quantity) {
         cout << "入库失败：" << model << " 现有 " << stock[idx].quantity
@@ -167,14 +165,14 @@ int main() {
     loadStock(path, stock);
     cout << "库存数据来自: " << path << '\n';
 
-    bool normalExit = false;
-    while (!normalExit) {
+    bool quit = false;
+    while (!quit) {
         printMenu();
 
         int choice;
         if (!(cin >> choice)) {
-            if (cin.eof()) break;         // 输入流结束（比如管道读完），正常收工
-            cin.clear();                  // 输入了字母之类，清掉重新问一次，别直接退出
+            if (cin.eof()) break;         // 输入没了（比如管道读完），直接收工
+            cin.clear();                  // 输成字母了，清掉重问一遍，别直接退出
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
             cout << "请输入数字选项。\n";
             continue;
@@ -191,18 +189,19 @@ int main() {
                 stockOut(stock);
                 break;
             case 0:
-                normalExit = true;
+                quit = true;
                 break;
             default:
                 cout << "没有这个选项，重新选一下。\n";
         }
     }
 
-    // 保存成功才敢说“已保存”；失败了如实告诉用户，并返回非 0 退出码
+    // 保存成功才敢说“已保存”，失败了如实说一声
     if (saveStock(path, stock)) {
         cout << "库存已保存到 " << path << "，再见。\n";
         return 0;
     }
-    cout << "保存失败！库存没有写入 " << path << "，请检查文件是否被占用或磁盘是否有空间。\n";
+    cout << "保存失败！库存没写进 " << path
+         << "，看看文件是不是被占用了，或者磁盘还有没有空间。\n";
     return 1;
 }
