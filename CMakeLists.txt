@@ -25,3 +25,6 @@ add_executable(p08_warehouse  level1/p08_warehouse/main.cpp)
 add_executable(p09_safe_array_cpp  level1/p09_safe_array_cpp/main.cpp)
 
 add_executable(p10_zoo_cpp  level1/p10_zoo_cpp/main.cpp)
+
+# level2 选做题
+add_executable(SkipList  level2/SkipList/main.cpp)
