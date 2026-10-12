@@ -88,6 +88,7 @@ private:
     }
 
     void swap(SafeArray& other) noexcept {
+        // 类里有个同名的 swap，这两行不写 std:: 会被它挡住
         std::swap(size_, other.size_);
         std::swap(data_, other.data_);
     }
@@ -155,7 +156,7 @@ int main() {
          << "，副本 copy[0] = " << copy[0] << '\n';
 
     // 移动之后数据搬到新对象身上，原对象成了空壳
-    SafeArray<int> moved(std::move(copy));
+    SafeArray<int> moved(move(copy));
     cout << "移动检查：moved.size() = " << moved.size()
          << "，被搬走的 copy.size() = " << copy.size() << '\n';
 

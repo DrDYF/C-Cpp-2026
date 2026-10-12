@@ -7,12 +7,10 @@ using namespace std;
 /*
  * 跳表（SkipList）
  *
- * 在有序链表上面再叠几层索引：level 0 是完整的链表，
- * 每往上一层节点就少一半。查找时从最高层开始往前跳，
- * 跳不动了就往下降一层，平均 O(log n)，比平衡树好写也好调。
+ * 在有序链表上再叠几层索引：level 0 是完整链表，往上每层节点少一半，
+ * 查找从最高层往前跳，跳不动就降一层，平均 O(log n)。
  *
- * 新节点有几层是掷硬币随机决定的，所以每次跑出来的结构都不太一样，
- * 但元素顺序和查找结果一定是对的。
+ * 新节点几层是掷硬币定的，每次跑出来的结构都不一样。
  */
 template <typename K, typename V>
 class SkipList {
@@ -42,15 +40,15 @@ public:
     bool empty() const { return nodeCount == 0; }
     int levels() const { return level + 1; }     // 当前一共几层
 
-    // 查找：找到就把 value 带出来，返回 true
+    // 查找。找到就把 value 带出来，返回 true
     bool search(const K& key, V& value) const {
         const Node* node = header;
         for (int i = level; i >= 0; --i) {
-            // 在这一层上能往前就往前，直到下一个节点的 key 不小于要查的
+            // 在这一层一直往前，直到下一个节点的 key 不小于 key
             while (node->forward[i] != nullptr && node->forward[i]->key < key)
                 node = node->forward[i];
         }
-        node = node->forward[0];            // 最后落到 level 0，看下一个是不是要找的
+        node = node->forward[0];            // 落到 level 0，看下一个是不是它
         if (node != nullptr && node->key == key) {
             value = node->value;
             return true;
@@ -58,7 +56,7 @@ public:
         return false;
     }
 
-    // 插入。key 已经存在就不插，返回 false
+    // 插入，已经有这个 key 就不插，返回 false
     bool insert(const K& key, const V& value) {
         Node* update[MAX_LEVEL];            // update[i] 记下第 i 层上要接在谁后面
         Node* node = header;
@@ -87,7 +85,7 @@ public:
         return true;
     }
 
-    // 删除。删掉了返回 true 并把原来的 value 带出来
+    // 删除。删掉了返回 true，原来的 value 也一起带出来
     bool remove(const K& key, V& value) {
         Node* update[MAX_LEVEL];
         Node* node = header;
@@ -113,7 +111,7 @@ public:
         return true;
     }
 
-    // 按顺序打印所有元素（level 0 就是完整的有序链表）
+    // 按顺序打印所有元素（level 0 就是完整的链表）
     void printAll() const {
         cout << "按顺序遍历: ";
         for (const Node* p = header->forward[0]; p != nullptr; p = p->forward[0])
