@@ -12,11 +12,21 @@ using namespace std;
  * 这里用类把它包起来，下标不对就抛 out_of_range，程序能自己发现错误。
  *
  * 用模板写的，所以 int / double / string …… 什么类型都能用。
+ *
+ * 因为类自己管理一块 new 出来的内存，所以按“三/五法则”把
+ * 析构、拷贝构造、拷贝赋值、移动构造、移动赋值都写全了：
+ *   - 拷贝走深拷贝，两个对象各有一份数据，析构时不会 double free；
+ *   - 移动只是把指针接过来，O(1) 且不抛异常，省掉一次无谓的复制。
  */
 template <typename T>
 class SafeArray {
 public:
-    explicit SafeArray(int size) : size_(size), data_(new T[size]()) {}
+    explicit SafeArray(int size) : size_(0), data_(nullptr) {
+        if (size < 0)
+            throw invalid_argument("数组长度不能为负数: " + to_string(size));
+        size_ = size;
+        data_ = new T[size]();          // 值初始化：int 全 0，string 全空
+    }
 
     // 拷贝构造：不然两个对象会指向同一块内存，析构时 double free
     SafeArray(const SafeArray& other) : size_(other.size_), data_(new T[other.size_]) {
@@ -32,9 +42,28 @@ public:
         return *this;
     }
 
+    // 移动构造：直接把别人的指针拿过来，原来的对象交出去之后置空
+    SafeArray(SafeArray&& other) noexcept
+        : size_(other.size_), data_(other.data_) {
+        other.size_ = 0;
+        other.data_ = nullptr;
+    }
+
+    SafeArray& operator=(SafeArray&& other) noexcept {
+        if (this != &other) {
+            delete[] data_;
+            size_ = other.size_;
+            data_ = other.data_;
+            other.size_ = 0;
+            other.data_ = nullptr;
+        }
+        return *this;
+    }
+
     ~SafeArray() { delete[] data_; }
 
     int size() const { return size_; }
+    bool empty() const { return size_ == 0; }
 
     // 功能要求（二）：重载下标运算符，顺便做越界检查
     T& operator[](int index) {
@@ -49,12 +78,17 @@ public:
 
 private:
     void checkIndex(int index) const {
-        if (index < 0 || index >= size_)
+        if (index < 0 || index >= size_) {
+            // 空数组是特殊情况：合法范围根本不存在，提示要说清楚
+            if (size_ == 0)
+                throw out_of_range("数组长度为 0，任何下标都越界（index = "
+                                   + to_string(index) + "）");
             throw out_of_range("下标越界: " + to_string(index)
                                + "（合法范围 0 ~ " + to_string(size_ - 1) + "）");
+        }
     }
 
-    void swap(SafeArray& other) {
+    void swap(SafeArray& other) noexcept {
         std::swap(size_, other.size_);
         std::swap(data_, other.data_);
     }
@@ -82,6 +116,16 @@ void tryWrite(SafeArray<int>& arr, int index, int value) {
     }
 }
 
+// 长度给成负数属于“用错了”，程序应当立刻报错，而不是去申请一块天文数字的内存
+void tryCreate(int size) {
+    try {
+        SafeArray<int> bad(size);
+        cout << "  创建长度 " << size << " 的数组成功\n";
+    } catch (const invalid_argument& e) {
+        cout << "  创建长度 " << size << " 的数组被拦住了 -> " << e.what() << '\n';
+    }
+}
+
 int main() {
     SafeArray<int> nums(5);
     for (int i = 0; i < nums.size(); ++i)
@@ -96,6 +140,25 @@ int main() {
     tryRead(nums, 10);
     tryRead(nums, -1);
     tryWrite(nums, 5, 0);
+
+    // 边界情况：空数组、负长度
+    cout << "边界情况：\n";
+    SafeArray<int> none(0);
+    cout << "  空数组 size() = " << none.size()
+         << "，empty() = " << (none.empty() ? "true" : "false") << '\n';
+    tryRead(none, 0);
+    tryCreate(-3);
+
+    // 拷贝是深拷贝：改副本不会动到原件
+    SafeArray<int> copy(nums);
+    copy[0] = 999;
+    cout << "深拷贝检查：原件 nums[0] = " << nums[0]
+         << "，副本 copy[0] = " << copy[0] << '\n';
+
+    // 移动之后数据搬到了新对象身上，原对象变成空壳
+    SafeArray<int> moved(std::move(copy));
+    cout << "移动检查：moved.size() = " << moved.size()
+         << "，被搬走的 copy.size() = " << copy.size() << '\n';
 
     // 功能要求（三）：换个类型照样能用
     SafeArray<string> words(3);

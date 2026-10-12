@@ -3,13 +3,14 @@
 #include <string>
 #include <vector>
 #include <limits>
+#include <stdexcept>
 
 using namespace std;
 
 // 一种货物
 struct Item {
-    string model;     // 型号
-    int quantity;     // 数量
+    string model;         // 型号
+    long long quantity;   // 数量
 };
 
 // 库存文件放在源码旁边，这样在 CLion 的 build 目录下运行也能找得到
@@ -24,25 +25,56 @@ string dataFilePath() {
 }
 
 // 文件里一行存一条记录：型号 数量
-void loadStock(const string& path, vector<Item>& stock) {
+// 读的时候顺便报告格式不对的行，免得数据悄悄丢了还不知道
+bool loadStock(const string& path, vector<Item>& stock) {
     ifstream fin(path);
     if (!fin) {
         cout << "还没用过这个程序吧？先按空仓库来。\n";
-        return;
+        return true;                      // 第一次运行没有文件，不算错误
     }
-    Item item;
-    while (fin >> item.model >> item.quantity)
+
+    string line;
+    int lineNo = 0, badLines = 0;
+    while (getline(fin, line)) {
+        ++lineNo;
+        if (line.empty()) continue;
+
+        Item item;
+        size_t pos = 0;
+        try {
+            pos = (size_t)line.find(' ');
+            item.model = line.substr(0, pos);
+            item.quantity = stoll(line.substr(pos + 1));   // 数量超出 long long 会抛异常
+        } catch (const exception&) {
+            ++badLines;
+            cout << "第 " << lineNo << " 行读不出来，已跳过：" << line << '\n';
+            continue;
+        }
+        if (item.model.empty() || item.quantity < 0) {
+            ++badLines;
+            cout << "第 " << lineNo << " 行数据不合法，已跳过：" << line << '\n';
+            continue;
+        }
         stock.push_back(item);
+    }
+    if (badLines > 0)
+        cout << "提示：库存文件里有 " << badLines << " 行没读进来。\n";
+    return true;
 }
 
-void saveStock(const string& path, const vector<Item>& stock) {
-    ofstream fout(path);
-    if (!fout) {
-        cout << "保存失败，写不了 " << path << '\n';
-        return;
-    }
+// 保存库存。写成功返回 true，写失败返回 false ——
+// 调用方必须看返回值再决定要不要提示“已保存”，不能想当然。
+bool saveStock(const string& path, const vector<Item>& stock) {
+    ofstream fout(path, ios::trunc);
+    if (!fout) return false;              // 打不开（没权限、路径不存在……）
+
     for (const Item& item : stock)
         fout << item.model << ' ' << item.quantity << '\n';
+
+    fout.flush();
+    if (!fout) return false;              // 写到一半失败（磁盘满之类）
+    fout.close();
+    return !fout.fail();                  // 关闭时也会把最后的错误暴露出来
 }
 
 void showStock(const vector<Item>& stock) {
@@ -65,7 +97,7 @@ int findItem(const vector<Item>& stock, const string& model) {
 }
 
 // 读一行“型号 数量”，格式不对就返回 false
-bool readModelAndCount(string& model, int& quantity) {
+bool readModelAndCount(string& model, long long& quantity) {
     cout << "输入型号和数量（例如 A100 20）: ";
     if (!(cin >> model >> quantity) || quantity <= 0) {
         cout << "输入不合法。\n";
@@ -79,23 +111,33 @@ bool readModelAndCount(string& model, int& quantity) {
 // 入库：已有型号就累加，没有就新建一条
 void stockIn(vector<Item>& stock) {
     string model;
-    int quantity;
+    long long quantity;
     if (!readModelAndCount(model, quantity)) return;
 
     int idx = findItem(stock, model);
     if (idx == -1) {
         stock.push_back({model, quantity});
         cout << "新增货物 " << model << "，数量 " << quantity << '\n';
-    } else {
-        stock[idx].quantity += quantity;
-        cout << model << " 入库 " << quantity << "，现在有 " << stock[idx].quantity << '\n';
+        return;
     }
+
+    // 累加之前先判断会不会溢出。等溢出了再发现就晚了 ——
+    // 有符号整数溢出是未定义行为，数量会直接变成负数，账就彻底乱了。
+    const long long maxQuantity = numeric_limits<long long>::max();
+    if (stock[idx].quantity > maxQuantity - quantity) {
+        cout << "入库失败：" << model << " 现有 " << stock[idx].quantity
+             << "，再加 " << quantity << " 会超出数量上限。\n";
+        return;
+    }
+
+    stock[idx].quantity += quantity;
+    cout << model << " 入库 " << quantity << "，现在有 " << stock[idx].quantity << '\n';
 }
 
 // 出库：库存不够就整单拒绝，免得出现负数
 void stockOut(vector<Item>& stock) {
     string model;
-    int quantity;
+    long long quantity;
     if (!readModelAndCount(model, quantity)) return;
 
     int idx = findItem(stock, model);
@@ -125,11 +167,18 @@ int main() {
     loadStock(path, stock);
     cout << "库存数据来自: " << path << '\n';
 
-    while (true) {
+    bool normalExit = false;
+    while (!normalExit) {
         printMenu();
 
         int choice;
-        if (!(cin >> choice)) break;    // 输入了非数字就当作退出
+        if (!(cin >> choice)) {
+            if (cin.eof()) break;         // 输入流结束（比如管道读完），正常收工
+            cin.clear();                  // 输入了字母之类，清掉重新问一次，别直接退出
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "请输入数字选项。\n";
+            continue;
+        }
 
         switch (choice) {
             case 1:
@@ -142,14 +191,18 @@ int main() {
                 stockOut(stock);
                 break;
             case 0:
-                saveStock(path, stock);
-                cout << "库存已保存到 " << path << "，再见。\n";
-                return 0;
+                normalExit = true;
+                break;
             default:
                 cout << "没有这个选项，重新选一下。\n";
         }
     }
 
-    saveStock(path, stock);
-    return 0;
+    // 保存成功才敢说“已保存”；失败了如实告诉用户，并返回非 0 退出码
+    if (saveStock(path, stock)) {
+        cout << "库存已保存到 " << path << "，再见。\n";
+        return 0;
+    }
+    cout << "保存失败！库存没有写入 " << path << "，请检查文件是否被占用或磁盘是否有空间。\n";
+    return 1;
 }
