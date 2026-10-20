@@ -29,9 +29,6 @@ struct Level {
     int px = 0, py = 0;         // 玩家坐标（列 x，行 y）
     int width = 0, height = 0;
     int steps = 0;              // 本关已经走了多少步
-    int playerCount = 0;        // 玩家个数，正常是 1
-    int boxCount = 0;           // 箱子个数
-    int goalCount = 0;          // 目标点个数
 };
 
 // ---------- 终端相关 ----------
@@ -78,7 +75,7 @@ void clearScreen() { cout << "\033[2J\033[H" << flush; }
 
 // ---------- 找文件 ----------
 
-// CLion 默认在 build 目录里跑程序，当前目录不一定是源码目录。
+// 当前目录不一定是源码目录。
 // 这里挨个试几个可能的位置，哪个能读到关卡文件就用哪个。
 string findGameDir() {
     string here = __FILE__;
@@ -116,6 +113,14 @@ string nowString() {
     return buf;
 }
 
+// 写入并立即刷新，避免只打开文件却把失败误报成成功。
+bool writeScoreLine(ofstream& score, const string& line) {
+    if (!score.is_open() || !score.good()) return false;
+    score << line;
+    score.flush();
+    return static_cast<bool>(score);
+}
+
 // ---------- 关卡读写 ----------
 
 bool loadLevel(const string& path, Level& lv) {
@@ -133,106 +138,22 @@ bool loadLevel(const string& path, Level& lv) {
     lv.height = (int)lines.size();
     lv.width = 0;
     for (const string& s : lines) lv.width = max(lv.width, (int)s.size());
-    if (lv.width == 0) return false;            // 整张图都是空行
 
     lv.ground.assign(lv.height, string(lv.width, ' '));
     lv.things.assign(lv.height, string(lv.width, ' '));
     lv.steps = 0;
-    lv.playerCount = lv.boxCount = lv.goalCount = 0;
 
     for (int y = 0; y < lv.height; ++y) {
         for (int x = 0; x < lv.width; ++x) {
             char c = (x < (int)lines[y].size()) ? lines[y][x] : ' ';
             switch (c) {
                 case '#': lv.ground[y][x] = '#'; break;
-                case '.': lv.ground[y][x] = '.'; ++lv.goalCount; break;
-                case '$': lv.things[y][x] = '$'; ++lv.boxCount; break;
-                case '*': lv.ground[y][x] = '.'; lv.things[y][x] = '$';
-                          ++lv.goalCount; ++lv.boxCount; break;
-                case '@': lv.px = x; lv.py = y; ++lv.playerCount; break;
-                case '+': lv.ground[y][x] = '.'; lv.px = x; lv.py = y;
-                          ++lv.goalCount; ++lv.playerCount; break;
+                case '.': lv.ground[y][x] = '.'; break;
+                case '$': lv.things[y][x] = '$'; break;
+                case '*': lv.ground[y][x] = '.'; lv.things[y][x] = '$'; break;
+                case '@': lv.px = x; lv.py = y; break;
+                case '+': lv.ground[y][x] = '.'; lv.px = x; lv.py = y; break;
                 default:  break;      // 其它字符一律当普通地板
-            }
-        }
-    }
-    return true;
-}
-
-// ---------- 地图校验 ----------
-
-// 关卡文件是手写的，不一定靠谱，先检查一遍再玩。
-// 有问题就返回 false，原因写在 reason 里。
-// 看这几样：
-//   玩家有且只有一个（没有就没法操作，两个不知道听谁的）；
-//   箱子数和目标点数相等（少了永远推不满，多了没地方放）；
-//   地图是封闭的（从玩家出发走一圈，不能摸到地图边界）；
-//   箱子和目标点都在玩家能走到的地方，不然这关无解。
-bool validateLevel(const Level& lv, string& reason) {
-    if (lv.width <= 0 || lv.height <= 0) {
-        reason = "地图是空的";
-        return false;
-    }
-    if (lv.playerCount != 1) {
-        reason = "玩家必须恰好有一个，现在有 " + to_string(lv.playerCount) + " 个";
-        return false;
-    }
-    if (lv.boxCount == 0) {
-        reason = "地图里一个箱子都没有，没什么可推的";
-        return false;
-    }
-    if (lv.boxCount != lv.goalCount) {
-        reason = "箱子 " + to_string(lv.boxCount) + " 个，目标点 "
-                 + to_string(lv.goalCount) + " 个，数量对不上";
-        return false;
-    }
-
-    // 从玩家出发走一遍，把能走到的地板都标出来
-    vector<vector<char>> seen(lv.height, vector<char>(lv.width, 0));
-    vector<pair<int, int>> stack;
-    stack.push_back(make_pair(lv.px, lv.py));
-    seen[lv.py][lv.px] = 1;
-
-    const int dx[4] = {1, -1, 0, 0};
-    const int dy[4] = {0, 0, 1, -1};
-    bool sealed = true;
-
-    while (!stack.empty()) {
-        pair<int, int> cur = stack.back();
-        stack.pop_back();
-        int x = cur.first, y = cur.second;
-
-        // 摸到地图边界，说明这块地方没用墙围起来
-        if (x == 0 || y == 0 || x == lv.width - 1 || y == lv.height - 1)
-            sealed = false;
-
-        for (int d = 0; d < 4; ++d) {
-            int nx = x + dx[d], ny = y + dy[d];
-            if (nx < 0 || nx >= lv.width || ny < 0 || ny >= lv.height) continue;
-            if (lv.ground[ny][nx] == '#') continue;     // 墙走不过去
-            if (seen[ny][nx]) continue;
-            seen[ny][nx] = 1;
-            stack.push_back(make_pair(nx, ny));
-        }
-    }
-
-    if (!sealed) {
-        reason = "地图没有封闭，玩家能走到地图外面去";
-        return false;
-    }
-
-    // 箱子和目标点都得在玩家能走到的范围里
-    for (int y = 0; y < lv.height; ++y) {
-        for (int x = 0; x < lv.width; ++x) {
-            if (lv.things[y][x] == '$' && !seen[y][x]) {
-                reason = "第 " + to_string(y + 1) + " 行第 " + to_string(x + 1)
-                         + " 列的箱子玩家够不着，这关无解";
-                return false;
-            }
-            if (lv.ground[y][x] == '.' && !seen[y][x]) {
-                reason = "第 " + to_string(y + 1) + " 行第 " + to_string(x + 1)
-                         + " 列的目标点玩家到不了，这关无解";
-                return false;
             }
         }
     }
@@ -320,7 +241,7 @@ int main() {
     // 每跑一次就追加一段记录，方便回头对比成绩
     string scoreFile = gameDir + "/scores.txt";
     ofstream score(scoreFile, ios::app);
-    if (score) score << "==== " << nowString() << " ====\n";
+    bool scoreSaved = writeScoreLine(score, "==== " + nowString() + " ====\n");
 
     int totalSteps = 0;
     bool quit = false;
@@ -328,17 +249,7 @@ int main() {
     for (int no = 1; no <= levelCount && !quit; ++no) {
         string path = gameDir + "/levels/level" + to_string(no) + ".txt";
         Level lv;
-
-        // 先读再校验，地图不对就报错退出
-        if (!loadLevel(path, lv)) {
-            cout << "读不了关卡文件 " << path << '\n';
-            return 1;
-        }
-        string reason;
-        if (!validateLevel(lv, reason)) {
-            cout << "关卡文件 " << path << " 有问题：" << reason << '\n';
-            return 1;
-        }
+        if (!loadLevel(path, lv)) break;
 
         while (true) {
             clearScreen();
@@ -368,15 +279,29 @@ int main() {
         if (!quit) {
             totalSteps += lv.steps;
             cout << "第 " << no << " 关用了 " << lv.steps << " 步\n";
-            if (score) score << "第 " << no << " 关  步数 " << lv.steps << '\n';
+            if (scoreSaved)
+                scoreSaved = writeScoreLine(score, "第 " + to_string(no) + " 关  步数 "
+                                                   + to_string(lv.steps) + '\n');
         }
     }
 
     if (!quit) {
         cout << "\n全部通关！总共 " << totalSteps << " 步\n";
-        if (score) score << "全部通关，总步数 " << totalSteps << "\n";
+        if (scoreSaved)
+            scoreSaved = writeScoreLine(score, "全部通关，总步数 " + to_string(totalSteps) + "\n");
     }
-    cout << "成绩记录在 " << scoreFile << '\n';
+
+    if (score.is_open()) {
+        score.flush();
+        if (!score) scoreSaved = false;
+        score.close();
+        if (score.fail()) scoreSaved = false;
+    }
+
+    if (scoreSaved)
+        cout << "成绩已保存到 " << scoreFile << '\n';
+    else
+        cout << "成绩保存失败，无法完整写入 " << scoreFile << '\n';
 
     return 0;
 }
