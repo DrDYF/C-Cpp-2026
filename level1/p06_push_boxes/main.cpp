@@ -75,7 +75,6 @@ void clearScreen() { cout << "\033[2J\033[H" << flush; }
 
 // ---------- 找文件 ----------
 
-// 当前目录不一定是源码目录。
 // 这里挨个试几个可能的位置，哪个能读到关卡文件就用哪个。
 string findGameDir() {
     string here = __FILE__;
@@ -133,30 +132,69 @@ bool loadLevel(const string& path, Level& lv) {
         if (!line.empty() && line.back() == '\r') line.pop_back();   // 兼容 Windows 换行
         lines.push_back(line);
     }
-    if (lines.empty()) return false;
+    if (fin.bad()) return false;
+    if (lines.empty() || lines.front().empty()) return false;
 
-    lv.height = (int)lines.size();
-    lv.width = 0;
-    for (const string& s : lines) lv.width = max(lv.width, (int)s.size());
+    const int height = static_cast<int>(lines.size());
+    const int width = static_cast<int>(lines.front().size());
+    if (height < 3 || width < 3) return false;
+    for (const string& line : lines)
+        if (static_cast<int>(line.size()) != width) return false;
 
-    lv.ground.assign(lv.height, string(lv.width, ' '));
-    lv.things.assign(lv.height, string(lv.width, ' '));
-    lv.steps = 0;
+    Level parsed;
+    parsed.height = height;
+    parsed.width = width;
+    parsed.ground.assign(height, string(width, ' '));
+    parsed.things.assign(height, string(width, ' '));
 
-    for (int y = 0; y < lv.height; ++y) {
-        for (int x = 0; x < lv.width; ++x) {
-            char c = (x < (int)lines[y].size()) ? lines[y][x] : ' ';
-            switch (c) {
-                case '#': lv.ground[y][x] = '#'; break;
-                case '.': lv.ground[y][x] = '.'; break;
-                case '$': lv.things[y][x] = '$'; break;
-                case '*': lv.ground[y][x] = '.'; lv.things[y][x] = '$'; break;
-                case '@': lv.px = x; lv.py = y; break;
-                case '+': lv.ground[y][x] = '.'; lv.px = x; lv.py = y; break;
-                default:  break;      // 其它字符一律当普通地板
+    int playerCount = 0;
+    int boxCount = 0;
+    int goalCount = 0;
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            switch (lines[y][x]) {
+                case '#':
+                    parsed.ground[y][x] = '#';
+                    break;
+                case ' ':
+                    break;
+                case '.':
+                    parsed.ground[y][x] = '.';
+                    ++goalCount;
+                    break;
+                case '$':
+                    parsed.things[y][x] = '$';
+                    ++boxCount;
+                    break;
+                case '*':
+                    parsed.ground[y][x] = '.';
+                    parsed.things[y][x] = '$';
+                    ++boxCount;
+                    ++goalCount;
+                    break;
+                case '@':
+                    parsed.px = x;
+                    parsed.py = y;
+                    ++playerCount;
+                    break;
+                case '+':
+                    parsed.ground[y][x] = '.';
+                    parsed.px = x;
+                    parsed.py = y;
+                    ++playerCount;
+                    ++goalCount;
+                    break;
+                default:
+                    return false;
             }
         }
     }
+
+    if (playerCount != 1 || boxCount == 0 || boxCount != goalCount) return false;
+
+    parsed.steps = 0;
+    lv = move(parsed);
     return true;
 }
 
@@ -245,11 +283,17 @@ int main() {
 
     int totalSteps = 0;
     bool quit = false;
+    bool loadFailed = false;
+    int completedLevels = 0;
 
-    for (int no = 1; no <= levelCount && !quit; ++no) {
+    for (int no = 1; no <= levelCount && !quit && !loadFailed; ++no) {
         string path = gameDir + "/levels/level" + to_string(no) + ".txt";
         Level lv;
-        if (!loadLevel(path, lv)) break;
+        if (!loadLevel(path, lv)) {
+            cout << "第 " << no << " 关地图加载失败，未完成通关。\n";
+            loadFailed = true;
+            break;
+        }
 
         while (true) {
             clearScreen();
@@ -257,7 +301,14 @@ int main() {
 
             Key k = readKey();
             if (k == Key::Quit) { quit = true; break; }
-            if (k == Key::Restart) { loadLevel(path, lv); continue; }
+            if (k == Key::Restart) {
+                if (!loadLevel(path, lv)) {
+                    cout << "第 " << no << " 关地图加载失败，未完成通关。\n";
+                    loadFailed = true;
+                    break;
+                }
+                continue;
+            }
 
             int dx = 0, dy = 0;
             if (k == Key::Up)         dy = -1;
@@ -276,8 +327,9 @@ int main() {
             }
         }
 
-        if (!quit) {
+        if (!quit && !loadFailed) {
             totalSteps += lv.steps;
+            ++completedLevels;
             cout << "第 " << no << " 关用了 " << lv.steps << " 步\n";
             if (scoreSaved)
                 scoreSaved = writeScoreLine(score, "第 " + to_string(no) + " 关  步数 "
@@ -285,7 +337,7 @@ int main() {
         }
     }
 
-    if (!quit) {
+    if (!quit && !loadFailed && completedLevels == levelCount) {
         cout << "\n全部通关！总共 " << totalSteps << " 步\n";
         if (scoreSaved)
             scoreSaved = writeScoreLine(score, "全部通关，总步数 " + to_string(totalSteps) + "\n");
