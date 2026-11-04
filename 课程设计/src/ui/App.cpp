@@ -93,7 +93,8 @@ void App::handleAIMove() {
 }
 void App::render() {
     BeginDrawing();
-    renderer_.draw(board_,isAITurn() || board_.checkWin()!=Stone::Empty ? Point{} : hoverPos_);
+    renderer_.draw(board_,isAITurn() || board_.checkWin()!=Stone::Empty ? Point{} : hoverPos_,
+                   gameMode_ == GameMode::PVE_BLACK ? Stone::Black : Stone::White);
     panel_.draw(board_,gameMode_,aiThinking_,lastSearch_,aiError_.c_str(),aiCancelling_);
     EndDrawing();
 }

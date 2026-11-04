@@ -7,7 +7,7 @@ class Renderer {
 public:
     Renderer() = default;
     
-    void draw(const Board& board, Point hoverPos);
+    void draw(const Board& board, Point hoverPos, Stone humanColor = Stone::Black);
     
 private:
     void drawBoard();

@@ -2,7 +2,7 @@
 #include "Theme.h"
 #include <cmath>
 
-void Renderer::draw(const Board& board, Point hoverPos) {
+void Renderer::draw(const Board& board, Point hoverPos, Stone humanColor) {
     ClearBackground(Theme::BG_COLOR());
     
     // 更新动画
@@ -16,9 +16,11 @@ void Renderer::draw(const Board& board, Point hoverPos) {
         drawHover(hoverPos, board.getCurrentPlayer());
     }
     
-    // 最后几步标记（渐变淡出）
+    // Mark only the latest round: the human move and its AI reply.
+    // A new human move starts a round immediately and clears the old pair.
     const auto& history = board.getHistory();
-    int count = std::min(5, static_cast<int>(history.size()));
+    int count = history.empty() ? 0 :
+        board.at(history.back()) == humanColor ? 1 : std::min(2, static_cast<int>(history.size()));
     for (int i = 0; i < count; ++i) {
         int idx = history.size() - 1 - i;
         Point p = history[idx];
