@@ -1,0 +1,3 @@
+Zpix (最像素) — Font.ttf
+Author: SolidZORO
+Project: https://github.com/SolidZORO/zpix-pixel-font
