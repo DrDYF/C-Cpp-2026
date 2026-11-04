@@ -1,8 +1,7 @@
 #include "ui/App.h"
-#include <memory>
 
 int main() {
-    auto app = std::make_unique<App>();
-    app->run();
+    App app;
+    app.run();
     return 0;
 }
