@@ -1,99 +1,133 @@
 #include "Pattern.h"
-#include <cstring>
+#include <algorithm>
+#include <array>
 
-PatternRecognizer::PatternRecognizer() {
-    initPatterns();
+namespace {
+// Distinct empty squares completing five, restricted to windows containing required stones.
+unsigned winningSquares(const int8_t* line, int n, unsigned required) {
+    unsigned result=0;
+    for (int s=0; s+5<=n; ++s) {
+        unsigned stones=0, empty=0;
+        int own=0;
+        bool blocked=false;
+        for (int i=s; i<s+5; ++i) {
+            if (line[i]==1) { ++own; stones |= 1u<<i; }
+            else if (line[i]==0) empty |= 1u<<i;
+            else blocked=true;
+        }
+        if (!blocked && own==4 && (stones & required)==required) result |= empty;
+    }
+    return result;
+}
+int bits(unsigned v) { int n=0; for (;v;v&=v-1) ++n; return n; }
+bool five(const int8_t* line, int n, unsigned required) {
+    for (int s=0;s+5<=n;++s) {
+        unsigned mask=0;
+        for(int i=s;i<s+5;++i) if(line[i]==1) mask|=1u<<i;
+        if(bits(mask)==5 && (mask&required)==required) return true;
+    }
+    return false;
+}
+ShapeType classify(std::array<int8_t,9> line) {
+    if(line[4]!=1) return ShapeType::NONE;
+    const unsigned center=1u<<4;
+    if(five(line.data(),9,center)) return ShapeType::FIVE;
+    int wins=bits(winningSquares(line.data(),9,center));
+    if(wins>=2) return ShapeType::FOUR;
+    if(wins==1) return ShapeType::BLOCKED_FOUR;
+    bool sleepThree=false;
+    for(int i=0;i<9;++i) if(line[i]==0) {
+        line[i]=1;
+        int next=bits(winningSquares(line.data(),9,center|(1u<<i)));
+        line[i]=0;
+        if(next>=2) return ShapeType::THREE;
+        if(next==1) sleepThree=true;
+    }
+    if(sleepThree) return ShapeType::SLEEP_THREE;
+    bool sleepTwo=false;
+    for(int i=0;i<9;++i) if(line[i]==0) {
+        line[i]=1;
+        for(int j=0;j<9;++j) if(line[j]==0) {
+            line[j]=1;
+            int next=bits(winningSquares(line.data(),9,center|(1u<<i)|(1u<<j)));
+            line[j]=0;
+            if(next>=2) { line[i]=0; return ShapeType::TWO; }
+            if(next==1) sleepTwo=true;
+        }
+        line[i]=0;
+    }
+    return sleepTwo ? ShapeType::SLEEP_TWO : ShapeType::NONE;
+}
 }
 
-void PatternRecognizer::initPatterns() {
-    shapeTable_.fill(ShapeType::NONE);
-    
-    // 简化版：运行时根据字符串匹配识别
-    // 完整版应该在这里预计算所有可能的 9 格编码
-    // 这里先用简化实现，M4 阶段再优化为查表
-}
+PatternRecognizer::PatternRecognizer() : shapeTable_(262144,255) {}
 
 ShapeType PatternRecognizer::recognizeLine(const int8_t* line, int8_t color) const {
-    // line[4] 是中心点
-    // 简化版棋型识别：扫描前后各4格
-    
-    int count = 0;  // 连续己方棋子数
-    int leftSpace = 0, rightSpace = 0;  // 两端空格数
-    int leftBlock = 0, rightBlock = 0;  // 两端是否被堵
-    
-    // 从中心向左扫
-    int i = 4;
-    while (i >= 0 && line[i] == color) {
-        count++;
-        i--;
+    std::array<int8_t,9> normalized{};
+    unsigned code=0;
+    for(int i=0;i<9;++i) {
+        normalized[i]=line[i]==color ? 1 : line[i]==0 ? 0 : 2;
+        code |= static_cast<unsigned>(normalized[i])<<(2*i);
     }
-    int leftEnd = i;
-    if (i >= 0 && line[i] == 0) {
-        while (i >= 0 && line[i] == 0) {
-            leftSpace++;
-            i--;
-        }
-        if (i >= 0 && line[i] == color) leftBlock = 0;  // 跳空后还是己方
-        else leftBlock = 1;
-    } else {
-        leftBlock = 1;
-    }
-    
-    // 从中心向右扫
-    i = 5;
-    while (i < 9 && line[i] == color) {
-        count++;
-        i++;
-    }
-    int rightEnd = i;
-    if (i < 9 && line[i] == 0) {
-        while (i < 9 && line[i] == 0) {
-            rightSpace++;
-            i++;
-        }
-        if (i < 9 && line[i] == color) rightBlock = 0;
-        else rightBlock = 1;
-    } else {
-        rightBlock = 1;
-    }
-    
-    // 根据连子数和堵塞情况判断棋型
-    if (count >= 5) return ShapeType::FIVE;
-    
-    if (count == 4) {
-        if (leftBlock == 0 && rightBlock == 0) return ShapeType::FOUR;  // 活四
-        if (leftBlock == 0 || rightBlock == 0) return ShapeType::BLOCKED_FOUR;  // 冲四
-        return ShapeType::DEAD;
-    }
-    
-    if (count == 3) {
-        if (leftBlock == 0 && rightBlock == 0) return ShapeType::THREE;  // 活三
-        if (leftBlock == 0 || rightBlock == 0) return ShapeType::SLEEP_THREE;  // 眠三
-        return ShapeType::DEAD;
-    }
-    
-    if (count == 2) {
-        if (leftBlock == 0 && rightBlock == 0 && leftSpace + rightSpace >= 3) {
-            return ShapeType::TWO;  // 活二
-        }
-        if ((leftBlock == 0 || rightBlock == 0) && leftSpace + rightSpace >= 2) {
-            return ShapeType::SLEEP_TWO;  // 眠二
-        }
-        return ShapeType::DEAD;
-    }
-    
-    return ShapeType::NONE;
+    uint8_t& cached=shapeTable_[code];
+    if(cached==255) cached=static_cast<uint8_t>(classify(normalized));
+    return static_cast<ShapeType>(cached);
 }
 
 int PatternRecognizer::getScore(ShapeType shape) {
-    switch (shape) {
-        case ShapeType::FIVE: return ShapeScore::FIVE;
-        case ShapeType::FOUR: return ShapeScore::FOUR;
-        case ShapeType::BLOCKED_FOUR: return ShapeScore::BLOCKED_FOUR;
-        case ShapeType::THREE: return ShapeScore::THREE;
-        case ShapeType::SLEEP_THREE: return ShapeScore::SLEEP_THREE;
-        case ShapeType::TWO: return ShapeScore::TWO;
-        case ShapeType::SLEEP_TWO: return ShapeScore::SLEEP_TWO;
-        default: return 0;
+    constexpr int scores[]={0,0,ShapeScore::SLEEP_TWO,ShapeScore::TWO,ShapeScore::SLEEP_THREE,
+        ShapeScore::THREE,ShapeScore::BLOCKED_FOUR,ShapeScore::FOUR,ShapeScore::FIVE};
+    return scores[static_cast<int>(shape)];
+}
+
+int PatternRecognizer::scoreLine(const int8_t* raw,int n,int8_t color) const {
+    if(n<5) return 0;
+    std::array<int8_t,15> line{};
+    for(int i=0;i<n;++i) line[i]=raw[i]==color ? 1 : raw[i]==0 ? 0 : 2;
+    struct Group { unsigned stones=0, ends=0; int count=0, score=0; };
+    std::array<Group,15> groups{};
+    int count=0;
+    for(int s=0;s+5<=n;++s) {
+        unsigned mask=0, empty=0;
+        bool blocked=false;
+        for(int i=s;i<s+5;++i) {
+            if(line[i]==1) mask|=1u<<i;
+            else if(line[i]==0) empty|=1u<<i;
+            else blocked=true;
+        }
+        int stones=bits(mask);
+        if(blocked || stones<2) continue;
+        int g=0;
+        while(g<count && groups[g].stones!=mask) ++g;
+        if(g==count) { groups[g].stones=mask; groups[g].count=stones; ++count; }
+        groups[g].ends |= empty;
     }
+    for(int g=0;g<count;++g) {
+        Group& v=groups[g];
+        if(v.count==5) v.score=ShapeScore::FIVE;
+        else if(v.count==4) v.score=bits(v.ends)>=2 ? ShapeScore::FOUR : ShapeScore::BLOCKED_FOUR;
+        else if(v.count==3) {
+            v.score=ShapeScore::SLEEP_THREE;
+            for(int k=0;k<n;++k) if(line[k]==0) {
+                line[k]=1;
+                int wins=bits(winningSquares(line.data(),n,v.stones|(1u<<k)));
+                line[k]=0;
+                if(wins>=2) { v.score=ShapeScore::THREE; break; }
+            }
+        } else {
+            int lo=0,hi=n-1;
+            while(!(v.stones&(1u<<lo))) ++lo;
+            while(!(v.stones&(1u<<hi))) --hi;
+            bool open=lo>0 && hi+1<n && line[lo-1]==0 && line[hi+1]==0 && hi-lo<=2;
+            v.score=open ? ShapeScore::TWO : ShapeScore::SLEEP_TWO;
+        }
+    }
+    int total=0;
+    for(int g=0;g<count;++g) {
+        bool subset=false;
+        for(int h=0;h<count;++h) if(groups[h].count>groups[g].count &&
+            (groups[h].stones & groups[g].stones)==groups[g].stones) { subset=true; break; }
+        if(!subset) total+=groups[g].score;
+    }
+    return total;
 }

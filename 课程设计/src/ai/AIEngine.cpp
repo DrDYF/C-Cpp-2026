@@ -1,26 +1,50 @@
 #include "AIEngine.h"
+#include <algorithm>
+#include <chrono>
+#include <vector>
 
 AIEngine::AIEngine()
-    : moveGen_(evaluator_)
-    , searcher_(evaluator_, moveGen_)
-    , threatSearcher_(evaluator_) {
-}
+    : moveGen_(evaluator_), searcher_(evaluator_, moveGen_) {}
 
-SearchResult AIEngine::think(const Board& board, int timeLimitMs) {
-    Stone currentPlayer = board.getCurrentPlayer();
-    
-    // 第一步：随机在中心区域
-    if (board.getHistory().empty()) {
-        return SearchResult{Point(7, 7), 0, 0, 0};
+SearchResult AIEngine::think(const Board& board,int timeLimitMs,const std::atomic<bool>* cancel) {
+    const auto start=std::chrono::steady_clock::now();
+    auto cancelled=[] { SearchResult r; r.status=SearchStatus::Cancelled; return r; };
+    if(cancel && cancel->load()) return cancelled();
+    if(board.checkWin()!=Stone::Empty || board.getHistory().size()==225) {
+        SearchResult r; r.status=SearchStatus::Terminal; return r;
     }
-    
-    // 第二步：尝试 VCF 算杀（M5）
-    Board tempBoard = board;
-    Point vcfMove;
-    if (threatSearcher_.findVCF(tempBoard, currentPlayer, 10, vcfMove)) {
-        return SearchResult{vcfMove, 999999, 0, 0};
+    Stone current=board.getCurrentPlayer();
+    if(board.getHistory().empty()) return {Point(7,7),0,1,1,SearchReason::Opening,SearchStatus::Move};
+    long long tacticalNodes=0;
+    Board probe=board;
+    Stone opponent=current==Stone::Black?Stone::White:Stone::Black;
+    std::vector<Point> opponentWins;
+    for(Stone color:{current,opponent}) {
+        for(int y=0;y<15;++y) for(int x=0;x<15;++x) {
+            if(cancel && cancel->load()) return cancelled();
+            Point p(x,y);
+            if(!probe.place(p,color)) continue;
+            ++tacticalNodes;
+            bool wins=probe.checkWin()==color;
+            probe.undo();
+            if(!wins) continue;
+            if(color==current) return {p,SearchScore::Mate-1,1,tacticalNodes,SearchReason::ImmediateWin,SearchStatus::Move};
+            opponentWins.push_back(p);
+        }
     }
-    
-    // 第三步：常规搜索
-    return searcher_.search(board, currentPlayer, timeLimitMs);
+    if(opponentWins.size()==1) {
+        Point block=opponentWins.front();
+        probe.place(block,current);
+        int defendedScore=evaluator_.evaluateFull(probe,current);
+        return {block,defendedScore,1,tacticalNodes,SearchReason::ForcedDefense,SearchStatus::Move};
+    }
+    int elapsed=static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count());
+    SearchResult result=searcher_.search(board,current,std::max(1,timeLimitMs-elapsed),cancel);
+    result.nodes+=tacticalNodes;
+    // Own immediate wins were ruled out. Two distinct opponent winning squares
+    // cannot both be occupied now: search best resistance, report a proven loss.
+    if(opponentWins.size()>1 && result.status==SearchStatus::Move) {
+        result.score=-SearchScore::Mate+2; result.reason=SearchReason::MultipleThreatLoss;
+    }
+    return result;
 }

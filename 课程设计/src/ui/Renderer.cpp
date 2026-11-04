@@ -43,13 +43,14 @@ void Renderer::drawBoard() {
     // 棋盘底色 + 内阴影效果
     DrawRectangle(offsetX, offsetY, boardPixelSize, boardPixelSize, BOARD_COLOR());
     
-    // 内阴影（四边）
-    Color shadowColor = Color{0, 0, 0, 30};
-    DrawRectangleGradientEx(
-        Rectangle{static_cast<float>(offsetX), static_cast<float>(offsetY), 
-                 static_cast<float>(boardPixelSize), 10},
-        shadowColor, shadowColor, Color{0,0,0,0}, Color{0,0,0,0}
-    );
+    // Raylib corner order: top-left, bottom-left, bottom-right, top-right.
+    const Color shade{0,0,0,30}, clear{0,0,0,0};
+    float x=static_cast<float>(offsetX), y=static_cast<float>(offsetY);
+    float size=static_cast<float>(boardPixelSize), edge=10;
+    DrawRectangleGradientEx({x,y,size,edge}, shade,clear,clear,shade);
+    DrawRectangleGradientEx({x,y+size-edge,size,edge}, clear,shade,shade,clear);
+    DrawRectangleGradientEx({x,y,edge,size}, shade,shade,clear,clear);
+    DrawRectangleGradientEx({x+size-edge,y,edge,size}, clear,clear,shade,shade);
     
     // 网格线
     for (int i = 0; i < BOARD_SIZE; ++i) {
@@ -163,6 +164,11 @@ void Renderer::drawStone(Vector2 pos, Stone color, float alpha, float scale) {
     Color stoneColor = (color == Stone::Black) ? Theme::BLACK_STONE() : Theme::WHITE_STONE();
     stoneColor.a = static_cast<unsigned char>(255 * alpha);
     
+    // Draw the shadow behind the stone, never over its face.
+    if (alpha >= 0.99f) {
+        Vector2 shadowPos{pos.x + 2, pos.y + 2};
+        DrawCircleV(shadowPos, radius + 1, Color{0, 0, 0, 30});
+    }
     // 径向渐变模拟（用多层圆）
     if (color == Stone::Black) {
         // 黑子：中心亮一点
@@ -181,9 +187,4 @@ void Renderer::drawStone(Vector2 pos, Stone color, float alpha, float scale) {
         DrawCircleV(highlight, radius * 0.25f, Color{255, 255, 255, static_cast<unsigned char>(180 * alpha)});
     }
     
-    // 投影（仅完全显示时）
-    if (alpha >= 0.99f && scale >= 0.99f) {
-        Vector2 shadowPos = {pos.x + 2, pos.y + 2};
-        DrawCircleV(shadowPos, radius, Color{0, 0, 0, 30});
-    }
 }

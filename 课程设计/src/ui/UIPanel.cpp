@@ -1,124 +1,75 @@
 #include "UIPanel.h"
 #include "Theme.h"
+#include "UIText.h"
 #include <cstdio>
 
-UIPanel::UIPanel() 
-    : undoClicked_(false)
-    , resetClicked_(false)
-    , modeClicked_(false)
-    , selectedMode_(GameMode::PVP) {
-    
-    int sidebarX = Theme::getSidebarX();
-    
-    undoBtn_ = {Rectangle{static_cast<float>(sidebarX), 100, 120, 40}, "悔棋 (Z)", false};
-    resetBtn_ = {Rectangle{static_cast<float>(sidebarX + 130), 100, 120, 40}, "重开 (R)", false};
-    modeBtn_ = {Rectangle{static_cast<float>(sidebarX), 160, 250, 40}, "切换模式", false};
+UIPanel::UIPanel() {
+    const float x = static_cast<float>(Theme::getSidebarX());
+    undoBtn_ = {{x, 100, 120, 40}, "悔棋 (Z)"};
+    resetBtn_ = {{x + 130, 100, 120, 40}, "重开 (R)"};
 }
 
-void UIPanel::draw(const Board& board, GameMode mode, bool aiThinking) {
-    int sidebarX = Theme::getSidebarX();
-    
-    // 标题
-    DrawText("五子棋 Gomoku", sidebarX, 30, 24, Theme::TEXT_COLOR());
-    
-    // 按钮
-    Vector2 mousePos = GetMousePosition();
-    bool mousePressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
-    
-    drawButton(undoBtn_, mousePos, mousePressed);
-    drawButton(resetBtn_, mousePos, mousePressed);
-    drawButton(modeBtn_, mousePos, mousePressed);
-    
-    // 游戏信息
+void UIPanel::draw(const Board& board, GameMode, bool aiThinking, const SearchResult& result, const char* error, bool cancelling) {
+    int x = Theme::getSidebarX();
+    UIText::draw("五子棋 Gomoku", x, 30, 24, Theme::TEXT_COLOR());
+    drawButton(undoBtn_);
+    drawButton(resetBtn_);
     drawInfo(board, 220);
-    
-    // 模式选择
-    drawModeSelection(320, mousePos, mousePressed);
-    
-    // AI 思考提示
-    if (aiThinking) {
-        DrawText("AI 思考中...", sidebarX, 450, 18, Theme::TEXT_COLOR());
+    drawModeSelection(320);
+    if(error && *error) UIText::draw(error,x,450,16,RED);
+    else if (aiThinking) UIText::draw(cancelling ? "正在取消旧搜索..." : "AI 思考中...", x, 450, 18, Theme::TEXT_COLOR());
+    if (result.nodes>0) {
+        UIText::draw("上次搜索", x, 480, 16, Theme::TEXT_COLOR());
+        UIText::draw(TextFormat("深度 %d / 节点 %lld",result.depth,result.nodes), x, 505, 16, DARKGRAY);
+        UIText::draw(TextFormat("评分 %+d",result.score), x, 530, 16, DARKGRAY);
+        const char* reason=result.reason==SearchReason::ForcedDefense ? "必堵 / 落子后静态评分" :
+            result.reason==SearchReason::ImmediateWin ? "一步成五" :
+            result.reason==SearchReason::MultipleThreatLoss ? "多路成五威胁 / 败势" : "";
+        UIText::draw(reason, x, 550, 12, DARKGRAY);
     }
-    
-    // 操作提示
-    const char* hint = "提示:\n"
-                       "Z - 悔棋\n"
-                       "R - 重开\n"
-                       "鼠标点击落子";
-    DrawText(hint, sidebarX, 500, 14, DARKGRAY);
+    UIText::draw("提示:\nZ - 悔棋\nR - 重开\n鼠标点击落子", x, 575, 14, DARKGRAY);
 }
 
-bool UIPanel::drawButton(Button& btn, Vector2 mousePos, bool mousePressed) {
-    btn.hovered = CheckCollisionPointRec(mousePos, btn.rect);
-    
-    Color color = btn.hovered ? Theme::BUTTON_HOVER() : Theme::BUTTON_COLOR();
-    DrawRectangleRounded(btn.rect, 0.2f, 8, color);
-    
-    int textWidth = MeasureText(btn.text, 18);
-    int textX = btn.rect.x + (btn.rect.width - textWidth) / 2;
-    int textY = btn.rect.y + (btn.rect.height - 18) / 2;
-    DrawText(btn.text, textX, textY, 18, WHITE);
-    
-    if (btn.hovered && mousePressed) {
-        if (&btn == &undoBtn_) undoClicked_ = true;
-        if (&btn == &resetBtn_) resetClicked_ = true;
-        if (&btn == &modeBtn_) modeClicked_ = true;
-        return true;
-    }
-    
-    return false;
+void UIPanel::drawButton(const Button& btn) const {
+    bool hovered = CheckCollisionPointRec(GetMousePosition(), btn.rect);
+    DrawRectangleRounded(btn.rect, 0.2f, 8, hovered ? Theme::BUTTON_HOVER() : Theme::BUTTON_COLOR());
+    int width = UIText::measure(btn.text, 24);
+    UIText::draw(btn.text, static_cast<int>(btn.rect.x + (btn.rect.width - width)/2),
+                 static_cast<int>(btn.rect.y + (btn.rect.height - 24)/2), 24, WHITE);
 }
 
-void UIPanel::drawInfo(const Board& board, int yOffset) {
-    int sidebarX = Theme::getSidebarX();
-    
-    // 当前回合
-    Stone currentPlayer = board.getCurrentPlayer();
-    const char* playerName = (currentPlayer == Stone::Black) ? "黑方" : "白方";
-    char buffer[64];
-    snprintf(buffer, sizeof(buffer), "当前: %s", playerName);
-    DrawText(buffer, sidebarX, yOffset, 18, Theme::TEXT_COLOR());
-    
-    // 步数
-    snprintf(buffer, sizeof(buffer), "步数: %d", static_cast<int>(board.getHistory().size()));
-    DrawText(buffer, sidebarX, yOffset + 30, 18, Theme::TEXT_COLOR());
-    
-    // 胜负
+void UIPanel::drawInfo(const Board& board, int y) {
+    int x = Theme::getSidebarX();
+    const char* player = board.getCurrentPlayer() == Stone::Black ? "黑方" : "白方";
+    UIText::draw(TextFormat("当前: %s", player), x, y, 18, Theme::TEXT_COLOR());
+    UIText::draw(TextFormat("步数: %d", static_cast<int>(board.getHistory().size())), x, y+30, 18, Theme::TEXT_COLOR());
     Stone winner = board.checkWin();
-    if (winner != Stone::Empty) {
-        const char* winnerName = (winner == Stone::Black) ? "黑方获胜！" : "白方获胜！";
-        DrawText(winnerName, sidebarX, yOffset + 60, 20, RED);
+    if (winner != Stone::Empty)
+        UIText::draw(winner == Stone::Black ? "黑方获胜！" : "白方获胜！", x, y+60, 20, RED);
+    else if (board.getHistory().size() == 225)
+        UIText::draw("Draw", x, y+60, 20, DARKGRAY);
+}
+
+void UIPanel::drawModeSelection(int y) {
+    int x = Theme::getSidebarX();
+    UIText::draw("游戏模式:", x, y, 16, Theme::TEXT_COLOR());
+    const char* modes[] = {"玩家执黑", "玩家执白"};
+    for (int i=0; i<2; ++i) {
+        Rectangle rect{static_cast<float>(x), static_cast<float>(y+25+i*35), 250, 30};
+        bool selected = selectedMode_ == static_cast<GameMode>(i);
+        bool hover = CheckCollisionPointRec(GetMousePosition(), rect);
+        DrawRectangleRounded(rect, 0.15f, 6, selected ? Theme::BUTTON_COLOR() : hover ? Theme::BUTTON_HOVER() : Color{230,230,230,255});
+        UIText::draw(modes[i], x+10, y+30+i*35, 24, selected ? WHITE : Theme::TEXT_COLOR());
     }
 }
 
-void UIPanel::drawModeSelection(int yOffset, Vector2 mousePos, bool mousePressed) {
-    int sidebarX = Theme::getSidebarX();
-    
-    DrawText("游戏模式:", sidebarX, yOffset, 16, Theme::TEXT_COLOR());
-    
-    const char* modes[] = {"人人对战", "人机(黑)", "人机(白)"};
-    
-    for (int i = 0; i < 3; ++i) {
-        Rectangle rect{static_cast<float>(sidebarX), static_cast<float>(yOffset + 25 + i * 35), 250, 30};
-        bool selected = (selectedMode_ == static_cast<GameMode>(i));
-        bool hovered = CheckCollisionPointRec(mousePos, rect);
-        
-        Color bgColor = selected ? Theme::BUTTON_COLOR() : 
-                       hovered ? Theme::BUTTON_HOVER() : 
-                       Color{230, 230, 230, 255};
-        
-        DrawRectangleRounded(rect, 0.15f, 6, bgColor);
-        DrawText(modes[i], sidebarX + 10, yOffset + 30 + i * 35, 16, 
-                selected ? WHITE : Theme::TEXT_COLOR());
-        
-        if (hovered && mousePressed) {
-            selectedMode_ = static_cast<GameMode>(i);
-        }
+bool UIPanel::handleInput(Vector2 pos, bool pressed) {
+    if (!pressed) return false;
+    if (CheckCollisionPointRec(pos, undoBtn_.rect)) { undoClicked_ = true; return true; }
+    if (CheckCollisionPointRec(pos, resetBtn_.rect)) { resetClicked_ = true; return true; }
+    for (int i=0; i<2; ++i) {
+        Rectangle rect{static_cast<float>(Theme::getSidebarX()), static_cast<float>(345+i*35), 250, 30};
+        if (CheckCollisionPointRec(pos, rect)) { selectedMode_ = static_cast<GameMode>(i); modeClicked_ = true; return true; }
     }
-}
-
-bool UIPanel::handleInput(Vector2 mousePos, bool mousePressed) {
-    return drawButton(undoBtn_, mousePos, mousePressed) ||
-           drawButton(resetBtn_, mousePos, mousePressed) ||
-           drawButton(modeBtn_, mousePos, mousePressed);
+    return false;
 }

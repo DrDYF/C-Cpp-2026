@@ -1,4 +1,5 @@
 #include "Board.h"
+#include "Zobrist.h"
 
 Board::Board() : lastMove_(-1, -1), winner_(Stone::Empty) {
     reset();
@@ -13,6 +14,7 @@ void Board::reset() {
         }
     }
     history_.clear();
+    hash_ = 0;
     lastMove_ = Point(-1, -1);
     winner_ = Stone::Empty;
 }
@@ -24,6 +26,7 @@ bool Board::place(Point p, Stone color) {
     if (winner_ != Stone::Empty) return false;  // 已经分出胜负
     
     cells_[idx(p.x, p.y)] = static_cast<int8_t>(color);
+    hash_ ^= Zobrist::getValue(p.x, p.y, color);
     history_.push_back(p);
     lastMove_ = p;
     
@@ -38,10 +41,11 @@ bool Board::undo() {
     
     Point p = history_.back();
     history_.pop_back();
+    hash_ ^= Zobrist::getValue(p.x, p.y, at(p));
     cells_[idx(p.x, p.y)] = static_cast<int8_t>(Stone::Empty);
     
     lastMove_ = history_.empty() ? Point(-1, -1) : history_.back();
-    winner_ = Stone::Empty;  // 悔棋后重新判断
+    winner_ = checkWin();
     
     return true;
 }

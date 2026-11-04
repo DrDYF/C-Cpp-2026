@@ -1,44 +1,22 @@
 #include "TranspositionTable.h"
-#include <cstring>
+#include <algorithm>
 
-TranspositionTable::TranspositionTable(size_t sizeMB) {
-    size_ = (sizeMB * 1024 * 1024) / sizeof(TTEntry);
-    table_ = new TTEntry[size_];
-    clear();
+TranspositionTable::TranspositionTable(size_t sizeMB)
+    :table_(std::max<size_t>(1,sizeMB*1024*1024/sizeof(TTEntry))) {}
+void TranspositionTable::clear() { std::fill(table_.begin(),table_.end(),TTEntry{}); }
+void TranspositionTable::store(uint64_t hash,int depth,int score,Point move,TTEntry::Flag flag,int ply) {
+    TTEntry& entry=table_[hash%table_.size()];
+    if(entry.flag!=TTEntry::EMPTY && entry.hash==hash && entry.depth>depth) return;
+    if(score>=SearchScore::MateThreshold) score+=ply;
+    else if(score<=-SearchScore::MateThreshold) score-=ply;
+    entry.hash=hash; entry.depth=depth; entry.score=score; entry.bestMove=move; entry.flag=flag;
 }
-
-TranspositionTable::~TranspositionTable() {
-    delete[] table_;
-}
-
-void TranspositionTable::clear() {
-    std::memset(table_, 0, size_ * sizeof(TTEntry));
-}
-
-void TranspositionTable::store(uint64_t hash, int depth, int score, Point bestMove, TTEntry::Flag flag) {
-    size_t index = hash % size_;
-    TTEntry& entry = table_[index];
-    
-    // 替换策略：深度优先
-    if (entry.flag == TTEntry::EMPTY || depth >= entry.depth) {
-        entry.hash = hash;
-        entry.depth = depth;
-        entry.score = score;
-        entry.bestMove = bestMove;
-        entry.flag = flag;
-    }
-}
-
-bool TranspositionTable::probe(uint64_t hash, int depth, int& score, Point& bestMove, TTEntry::Flag& flag) {
-    size_t index = hash % size_;
-    TTEntry& entry = table_[index];
-    
-    if (entry.flag != TTEntry::EMPTY && entry.hash == hash && entry.depth >= depth) {
-        score = entry.score;
-        bestMove = entry.bestMove;
-        flag = entry.flag;
-        return true;
-    }
-    
-    return false;
+bool TranspositionTable::probe(uint64_t hash,int depth,int& score,Point& move,TTEntry::Flag& flag,int ply) const {
+    const TTEntry& entry=table_[hash%table_.size()];
+    if(entry.flag==TTEntry::EMPTY || entry.hash!=hash || entry.depth<depth) return false;
+    score=entry.score;
+    if(score>=SearchScore::MateThreshold) score-=ply;
+    else if(score<=-SearchScore::MateThreshold) score+=ply;
+    move=entry.bestMove; flag=entry.flag;
+    return true;
 }

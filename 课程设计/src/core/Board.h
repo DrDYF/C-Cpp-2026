@@ -29,6 +29,7 @@ public:
     const std::vector<Point>& getHistory() const { return history_; }
     
     // 当前该谁下
+    uint64_t getHash() const { return hash_; }
     Stone getCurrentPlayer() const;
     
 private:
@@ -44,4 +45,5 @@ private:
     std::vector<Point> history_;
     Point lastMove_;
     Stone winner_;
+    uint64_t hash_ = 0;
 };

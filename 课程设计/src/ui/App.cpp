@@ -1,113 +1,99 @@
 #include "App.h"
 #include "Theme.h"
+#include "UIText.h"
+#include <chrono>
+#include <stdexcept>
 
-App::App() 
-    : hoverPos_(-1, -1)
-    , gameMode_(GameMode::PVP)
-    , aiThinking_(false)
-    , running_(true) {
-    
-    InitWindow(Theme::WINDOW_WIDTH, Theme::WINDOW_HEIGHT, "五子棋 Gomoku");
+App::App() {
+    InitWindow(Theme::WINDOW_WIDTH,Theme::WINDOW_HEIGHT,"五子棋 Gomoku");
+    if(!UIText::load()) { CloseWindow(); throw std::runtime_error("Chinese UI font not found"); }
     SetTargetFPS(60);
 }
-
 App::~App() {
+    invalidateSearch();
+    if(pending_.valid()) pending_.wait();
+    UIText::unload();
     CloseWindow();
 }
-
 void App::run() {
-    while (running_ && !WindowShouldClose()) {
-        processInput();
-        update();
-        render();
-    }
+    while(running_ && !WindowShouldClose()) { processInput(); update(); render(); }
 }
-
+bool App::isAITurn() const {
+    if(board_.checkWin()!=Stone::Empty || board_.getHistory().size()==225) return false;
+    return (gameMode_==GameMode::PVE_BLACK && board_.getCurrentPlayer()==Stone::White) ||
+           (gameMode_==GameMode::PVE_WHITE && board_.getCurrentPlayer()==Stone::Black);
+}
+void App::invalidateSearch() {
+    ++revision_;
+    if(cancel_) cancel_->store(true);
+    lastSearch_=SearchResult{};
+    aiError_.clear();
+    failedRevision_=~uint64_t{0};
+}
+void App::resetGame() {
+    invalidateSearch();
+    board_.reset();
+    hoverPos_=Point{};
+}
+void App::undoTurn() {
+    // Keep the AI's opening stone when the human is white and has not moved yet.
+    const size_t opening=gameMode_==GameMode::PVE_WHITE ? 1 : 0;
+    if(board_.getHistory().size()<=opening) return;
+    invalidateSearch();
+    board_.undo();
+    if(isAITurn() && board_.getHistory().size()>opening) board_.undo();
+}
 void App::processInput() {
-    Vector2 mousePos = GetMousePosition();
-    bool mousePressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
-    
-    // UI 面板处理
-    if (panel_.handleInput(mousePos, mousePressed)) {
-        if (panel_.shouldUndo()) {
-            board_.undo();
-            if (gameMode_ != GameMode::PVP) {
-                board_.undo();
-            }
-        }
-        if (panel_.shouldReset()) {
-            board_.reset();
-            aiThinking_ = false;
-        }
-        if (panel_.shouldChangeMode()) {
-            gameMode_ = panel_.getSelectedMode();
-            board_.reset();
-            aiThinking_ = false;
-        }
-        return;
-    }
-    
-    // 棋盘交互
-    hoverPos_ = Theme::screenToBoard(mousePos);
-    
-    if (mousePressed && hoverPos_.isValid() && board_.at(hoverPos_) == Stone::Empty) {
-        handlePlayerMove(hoverPos_);
-    }
-    
-    // 快捷键
-    if (IsKeyPressed(KEY_Z)) {
-        board_.undo();
-        if (gameMode_ != GameMode::PVP) {
-            board_.undo();
-        }
-    }
-    
-    if (IsKeyPressed(KEY_R)) {
-        board_.reset();
-        aiThinking_ = false;
-    }
+    Vector2 pos=GetMousePosition();
+    bool pressed=IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
+    bool consumed=panel_.handleInput(pos,pressed);
+    if(panel_.shouldChangeMode()) { gameMode_=panel_.getSelectedMode(); resetGame(); }
+    if(panel_.shouldReset()) resetGame();
+    if(panel_.shouldUndo()) undoTurn();
+    if(IsKeyPressed(KEY_Z)) undoTurn();
+    if(IsKeyPressed(KEY_R)) resetGame();
+    hoverPos_=Theme::screenToBoard(pos);
+    if(!consumed && pressed) handlePlayerMove(hoverPos_);
 }
-
 void App::handlePlayerMove(Point p) {
-    Stone currentPlayer = board_.getCurrentPlayer();
-    
-    // 检查模式限制
-    if (gameMode_ == GameMode::PVE_BLACK && currentPlayer == Stone::White) return;
-    if (gameMode_ == GameMode::PVE_WHITE && currentPlayer == Stone::Black) return;
-    
-    if (board_.place(p, currentPlayer)) {
-        // 触发 AI 思考
-        if (gameMode_ != GameMode::PVP && board_.checkWin() == Stone::Empty) {
-            aiThinking_ = true;
+    if(isAITurn() || board_.checkWin()!=Stone::Empty) return;
+    if(board_.place(p,board_.getCurrentPlayer())) ++revision_;
+}
+void App::update() {
+    if(pending_.valid() && pending_.wait_for(std::chrono::milliseconds(0))==std::future_status::ready) {
+        try {
+            SearchResult result=pending_.get();
+            if(searchRevision_==revision_ && isAITurn() && !cancel_->load()) {
+                if(result.status==SearchStatus::Move && result.move.isValid() &&
+                   board_.place(result.move,board_.getCurrentPlayer())) { lastSearch_=result; ++revision_; }
+                else {
+                    failedRevision_=revision_;
+                    aiError_="AI 异常 / 请重开";
+                    TraceLog(LOG_ERROR,"AI returned no valid move for an active board (status %i)",static_cast<int>(result.status));
+                }
+            }
+        } catch(const std::exception& e) {
+            TraceLog(LOG_ERROR,"AI worker failed: %s",e.what());
+            failedRevision_=revision_;
+            aiError_="AI 异常 / 请重开";
         }
     }
+    if(!pending_.valid() && isAITurn() && running_ && failedRevision_!=revision_) handleAIMove();
+    aiThinking_=pending_.valid();
+    aiCancelling_=aiThinking_ && (searchRevision_!=revision_ || !isAITurn() || (cancel_ && cancel_->load()));
 }
-
-void App::update() {
-    gameMode_ = panel_.getSelectedMode();
-    
-    // AI 思考
-    if (aiThinking_ && board_.checkWin() == Stone::Empty) {
-        handleAIMove();
-        aiThinking_ = false;
-    }
-}
-
 void App::handleAIMove() {
-    Stone currentPlayer = board_.getCurrentPlayer();
-    SearchResult result = aiEngine_.think(board_, 1500);
-    
-    if (result.move.isValid()) {
-        board_.place(result.move, currentPlayer);
-    }
+    Board snapshot=board_;
+    cancel_=std::make_shared<std::atomic<bool>>(false);
+    auto token=cancel_;
+    searchRevision_=revision_;
+    pending_=std::async(std::launch::async,[this,snapshot,token] {
+        return aiEngine_.think(snapshot,1500,token.get());
+    });
 }
-
 void App::render() {
     BeginDrawing();
-    ClearBackground(Theme::BG_COLOR());
-    
-    renderer_.draw(board_, hoverPos_);
-    panel_.draw(board_, gameMode_, aiThinking_);
-    
+    renderer_.draw(board_,isAITurn() || board_.checkWin()!=Stone::Empty ? Point{} : hoverPos_);
+    panel_.draw(board_,gameMode_,aiThinking_,lastSearch_,aiError_.c_str(),aiCancelling_);
     EndDrawing();
 }

@@ -1,23 +1,17 @@
 #include "Zobrist.h"
 #include "Board.h"
 #include <random>
+#include <mutex>
 
 std::array<std::array<uint64_t, 3>, 225> Zobrist::table_;
 bool Zobrist::initialized_ = false;
 
 void Zobrist::init() {
-    if (initialized_) return;
-    
-    std::mt19937_64 rng(20261028);  // 固定种子
-    std::uniform_int_distribution<uint64_t> dist;
-    
-    for (int i = 0; i < 225; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            table_[i][j] = dist(rng);
-        }
-    }
-    
-    initialized_ = true;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        std::mt19937_64 rng(20261028);
+        for (auto& square : table_) for (auto& value : square) value = rng();
+    });
 }
 
 uint64_t Zobrist::hash(const Board& board) {
