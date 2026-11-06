@@ -60,6 +60,11 @@ int Searcher::childScore(Board& board,Stone color,int depth,int alpha,int beta,i
 SearchResult Searcher::search(const Board& board,Stone color,int timeLimitMs,const std::atomic<bool>* cancel,SearchOptions options) {
     cancel_=cancel; nodes_=0; timeUp_=false; options_=options; stats_=SearchStats{};
     options_.quiescenceDepth=std::clamp(options_.quiescenceDepth,0,8);
+    const int leafMode=options_.quiescence ? options_.quiescenceDepth : -1;
+    if(leafMode!=ttQuiescenceDepth_) {
+        tt_.clear();
+        ttQuiescenceDepth_=leafMode;
+    }
     killers_={}; history_={};
     deadline_=std::chrono::steady_clock::now()+std::chrono::milliseconds(std::max(1,timeLimitMs));
     SearchResult result;

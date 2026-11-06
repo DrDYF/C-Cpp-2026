@@ -54,6 +54,7 @@ private:
     const std::atomic<bool>* cancel_=nullptr;
     SearchOptions options_;
     SearchStats stats_;
+    int ttQuiescenceDepth_=-1;
     std::array<std::array<Point,2>,64> killers_{};
     std::array<std::array<int,225>,2> history_{};
 };
