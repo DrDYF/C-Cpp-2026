@@ -6,7 +6,11 @@
 struct ScoredMove {
     Point move;
     int score;
-    bool operator<(const ScoredMove& other) const { return score>other.score; }
+    int tier=4;
+    bool operator<(const ScoredMove& other) const {
+        if(tier!=other.tier) return tier<other.tier;
+        return score>other.score;
+    }
 };
 class MoveGenerator {
 public:

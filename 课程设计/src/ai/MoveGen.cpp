@@ -1,34 +1,41 @@
 #include "MoveGen.h"
 #include <algorithm>
-#include <array>
 #include <cstdlib>
 
 MoveGenerator::MoveGenerator(Evaluator& evaluator):evaluator_(evaluator) {}
+
 std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,int maxCount) {
     if(maxCount<=0 || board.checkWin()!=Stone::Empty) return {};
-    if(board.getHistory().empty()) return {Point(7,7)};
-    // Mark the neighborhood once instead of scanning 25 neighbors per empty square.
-    std::array<bool,225> nearby{};
-    for(Point stone:board.getHistory()) for(int dy=-2;dy<=2;++dy) for(int dx=-2;dx<=2;++dx) {
-        Point p(stone.x+dx,stone.y+dy);
-        if(p.isValid()) nearby[p.y*15+p.x]=true;
-    }
-    std::vector<ScoredMove> candidates;
+    std::vector<ScoredMove> scored;
+    scored.reserve(std::min(225,maxCount)+16);
     const int own=color==Stone::Black?0:1;
-    for(int y=0;y<15;++y) for(int x=0;x<15;++x) {
+    for(int y=0;y<BoardConst::SIZE;++y) for(int x=0;x<BoardConst::SIZE;++x) {
         Point p(x,y);
-        if(!nearby[y*15+x] || board.at(p)!=Stone::Empty) continue;
-        auto pair=evaluator_.evaluateMovePair(board,p);
-        int attack=pair[own],defense=pair[1-own];
+        if(!board.isCandidate(p) || board.at(p)!=Stone::Empty) continue;
+        const auto pair=evaluator_.evaluateMovePair(board,p);
+        const int attack=pair[own], defense=pair[1-own];
+        const bool wins=attack>=ShapeScore::FIVE;
+        const bool blocksWin=defense>=ShapeScore::FIVE;
+        const bool blocksFour=defense>=ShapeScore::BLOCKED_FOUR;
+        const bool makesFour=attack>=ShapeScore::BLOCKED_FOUR;
+
+        // Separate tactical classes. If the opponent has an immediate win,
+        // blocking that point outranks a non-winning attack; an immediate win
+        // by us outranks every defense.
+        const int tier=wins ? 0 : blocksWin ? 1 : blocksFour ? 2 : makesFour ? 3 : 4;
         int score=attack+defense*11/10;
-        if(attack>=ShapeScore::FIVE) score=100000000;
-        else if(defense>=ShapeScore::FIVE) score=90000000;
-        score=score*4+28-(std::abs(x-7)+std::abs(y-7));
-        candidates.push_back({p,score});
+        score=score*4+28-(std::abs(p.x-7)+std::abs(p.y-7));
+        scored.push_back({p,score,tier});
     }
-    std::stable_sort(candidates.begin(),candidates.end());
+    std::stable_sort(scored.begin(),scored.end());
+
     std::vector<Point> result;
-    int count=std::min(maxCount,static_cast<int>(candidates.size()));
-    for(int i=0;i<count;++i) result.push_back(candidates[i].move);
+    result.reserve(std::min(maxCount,static_cast<int>(scored.size()))+4);
+    for(const ScoredMove& move:scored) {
+        // Never prune a direct win, a block of an immediate win, or a block of
+        // an opponent four. Quiet candidates remain capped for search breadth.
+        if(static_cast<int>(result.size())<maxCount || move.tier<=2)
+            result.push_back(move.move);
+    }
     return result;
 }

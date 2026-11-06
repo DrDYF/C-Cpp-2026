@@ -8,16 +8,37 @@ bool Searcher::expired() {
     if((cancel_ && cancel_->load()) || std::chrono::steady_clock::now()>=deadline_) timeUp_=true;
     return timeUp_;
 }
-void Searcher::orderMoves(std::vector<Point>& moves,Stone color,int ply,Point ttMove) {
-    if(!options_.heuristics) return;
-    auto rank=[&](Point p) {
-        if(p==ttMove) return 200000000;
-        if(ply<64 && p==killers_[ply][0]) return 100000000;
-        if(ply<64 && p==killers_[ply][1]) return 90000000;
-        return history_[color==Stone::Black?0:1][p.y*15+p.x];
-    };
-    std::stable_sort(moves.begin(),moves.end(),[&](Point a,Point b){ return rank(a)>rank(b); });
-    if(ply<64 && !moves.empty() && (moves[0]==killers_[ply][0] || moves[0]==killers_[ply][1])) ++stats_.killerHits;
+void Searcher::orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove) {
+    if(!options_.heuristics || moves.size()<2) return;
+    std::array<int,225> tiers{};
+    std::array<int,225> scores{};
+    const int own=color==Stone::Black?0:1;
+    for(Point p:moves) {
+        const auto pair=evaluator_.evaluateMovePair(board,p);
+        const int attack=pair[own], defense=pair[1-own];
+        int tier=attack>=ShapeScore::FIVE ? 0 : defense>=ShapeScore::FIVE ? 1 :
+                 defense>=ShapeScore::BLOCKED_FOUR ? 2 : attack>=ShapeScore::BLOCKED_FOUR ? 3 : 6;
+        // Quiet TT/killer moves are useful, but never outrank direct wins,
+        // immediate blocks, or four-making/ four-blocking tactical tiers.
+        if(tier==6 && p==ttMove) tier=4;
+        else if(tier==6 && ply<64 && (p==killers_[ply][0] || p==killers_[ply][1])) tier=5;
+        const int id=p.y*15+p.x;
+        tiers[id]=tier;
+        scores[id]=attack+defense*11/10;
+    }
+    std::stable_sort(moves.begin(),moves.end(),[&](Point a,Point b) {
+        const int ia=a.y*15+a.x, ib=b.y*15+b.x;
+        if(tiers[ia]!=tiers[ib]) return tiers[ia]<tiers[ib];
+        if(tiers[ia]<=3 && scores[ia]!=scores[ib]) return scores[ia]>scores[ib];
+        if(tiers[ia]==6) {
+            const int ha=history_[own][ia], hb=history_[own][ib];
+            if(ha!=hb) return ha>hb;
+        }
+        return false;
+    });
+    const int firstId=moves.front().y*15+moves.front().x;
+    if(tiers[firstId]<=3) ++stats_.tacticalPriorityFirst;
+    if(ply<64 && tiers[firstId]==5) ++stats_.killerHits;
 }
 void Searcher::recordCutoff(Point move,Stone color,int depth,int ply) {
     if(!options_.heuristics) return;
@@ -182,7 +203,7 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
     if(expired()) return 0;
     if(moves.empty()) return 0;
     tt_.probe(hash,0,ttScore,ttMove,ttFlag,ply);
-    orderMoves(moves,color,ply,ttMove);
+    orderMoves(board,moves,color,ply,ttMove);
     int bestScore=-INF; Point bestMove=moves.front(); bool first=true;
     for(Point move:moves) {
         if(expired()) return 0;

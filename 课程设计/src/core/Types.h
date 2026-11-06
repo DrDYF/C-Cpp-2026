@@ -33,4 +33,5 @@ namespace BoardConst {
     constexpr int SIZE = 15;           // 棋盘大小
     constexpr int STRIDE = SIZE + 4;   // 带 padding 的数组宽度（19）
     constexpr int PADDING = 2;         // 外围填充
+    constexpr int CANDIDATE_RADIUS = 2; // Candidate distance in Chebyshev cells
 }

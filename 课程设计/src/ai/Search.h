@@ -30,6 +30,7 @@ struct SearchOptions {
 struct SearchStats {
     long long nullWindowProbes=0, researches=0, killerHits=0, historyUpdates=0;
     long long quiescenceNodes=0, forcingMoves=0, forcedBlocks=0;
+    long long tacticalPriorityFirst=0;
 };
 class Searcher {
 public:
@@ -41,7 +42,7 @@ private:
     int negamax(Board& board,Stone color,int depth,int alpha,int beta,int ply);
     int quiesce(Board& board,Stone color,int alpha,int beta,int ply,int remaining);
     int childScore(Board& board,Stone color,int depth,int alpha,int beta,int ply,bool first);
-    void orderMoves(std::vector<Point>& moves,Stone color,int ply,Point ttMove);
+    void orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove);
     void recordCutoff(Point move,Stone color,int depth,int ply);
     bool expired();
     Evaluator& evaluator_;
