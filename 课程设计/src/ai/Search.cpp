@@ -38,6 +38,7 @@ int Searcher::childScore(Board& board,Stone color,int depth,int alpha,int beta,i
 }
 SearchResult Searcher::search(const Board& board,Stone color,int timeLimitMs,const std::atomic<bool>* cancel,SearchOptions options) {
     cancel_=cancel; nodes_=0; timeUp_=false; options_=options; stats_=SearchStats{};
+    options_.quiescenceDepth=std::clamp(options_.quiescenceDepth,0,8);
     killers_={}; history_={};
     deadline_=std::chrono::steady_clock::now()+std::chrono::milliseconds(std::max(1,timeLimitMs));
     SearchResult result;
@@ -74,19 +75,101 @@ SearchResult Searcher::search(const Board& board,Stone color,int timeLimitMs,con
         }
         if(timeUp_) break;
         result.move=best; result.score=score; result.depth=depth;
-        if(std::abs(score)>=SearchScore::MateThreshold) break;
+        // A proven win cannot improve beyond the shortest winning line. A proven loss
+        // must keep searching: deeper iterations may find the longest resistance.
+        if(score>=SearchScore::MateThreshold) break;
     }
-    result.nodes=nodes_;
+    result.nodes=nodes_+stats_.quiescenceNodes;
+    result.quiescenceNodes=stats_.quiescenceNodes;
     if(cancel_ && cancel_->load()) { result.move=Point{}; result.status=SearchStatus::Cancelled; }
     return result;
 }
+int Searcher::quiesce(Board& board,Stone color,int alpha,int beta,int ply,int remaining) {
+    ++stats_.quiescenceNodes;
+    if(expired()) return 0;
+
+    const Stone winner=board.checkWin();
+    if(winner!=Stone::Empty)
+        return winner==color ? SearchScore::Mate-ply : -SearchScore::Mate+ply;
+    if(board.getHistory().size()==225) return 0;
+
+    // Score both sides' candidate points together. The move cache makes this second
+    // pass cheap and, importantly, the winning points are handled before stand-pat.
+    const Stone opponent=color==Stone::Black ? Stone::White : Stone::Black;
+    const int ownIndex=color==Stone::Black ? 0 : 1;
+    std::vector<Point> candidates=moveGen_.generateMoves(board,color,225);
+    if(expired()) return 0;
+    if(candidates.empty())
+        return std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);
+
+    std::vector<Point> ownWins;
+    std::vector<Point> opponentWins;
+    std::vector<ScoredMove> forcing;
+    ownWins.reserve(4); opponentWins.reserve(4); forcing.reserve(12);
+    for(Point move:candidates) {
+        const auto scores=evaluator_.evaluateMovePair(board,move);
+        const int attack=scores[ownIndex];
+        const int defense=scores[1-ownIndex];
+        if(attack>=ShapeScore::FIVE) ownWins.push_back(move);
+        if(defense>=ShapeScore::FIVE) opponentWins.push_back(move);
+        else if(attack>=ShapeScore::BLOCKED_FOUR || defense>=ShapeScore::BLOCKED_FOUR)
+            forcing.push_back({move,attack+defense*11/10});
+    }
+    if(!ownWins.empty()) return SearchScore::Mate-(ply+1);
+    if(opponentWins.size()>1) return -SearchScore::Mate+(ply+2);
+
+    // A unique immediate win must be answered; stand-pat would represent an
+    // illegal pass here. At the extension boundary, make the forced block and
+    // evaluate the resulting position rather than growing without bound.
+    if(opponentWins.size()==1) {
+        const Point block=opponentWins.front();
+        if(expired() || !board.place(block,color)) return 0;
+        evaluator_.makeMove(board,block);
+        ++stats_.forcedBlocks;
+        int value;
+        if(remaining>0 && ply<63) value=-quiesce(board,opponent,-beta,-alpha,ply+1,remaining-1);
+        else value=-std::clamp(evaluator_.evaluate(board,opponent),-SearchScore::Mate/2,SearchScore::Mate/2);
+        board.undo(); evaluator_.unmakeMove();
+        return value;
+    }
+
+    const int standPat=std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);
+    if(remaining<=0 || ply>=63 || forcing.empty()) return standPat;
+    if(standPat>=beta) return standPat;
+    if(standPat>alpha) alpha=standPat;
+    std::stable_sort(forcing.begin(),forcing.end());
+
+    int best=standPat;
+    for(const ScoredMove& candidate:forcing) {
+        if(expired()) return 0;
+        const Point move=candidate.move;
+        if(!board.place(move,color)) continue;
+        evaluator_.makeMove(board,move);
+        ++stats_.forcingMoves;
+        int score;
+        const Stone next=opponent;
+        if(board.checkWin()==color) score=SearchScore::Mate-(ply+1);
+        else score=-quiesce(board,next,-beta,-alpha,ply+1,remaining-1);
+        board.undo(); evaluator_.unmakeMove();
+        if(timeUp_) return 0;
+        if(score>best) best=score;
+        if(score>alpha) alpha=score;
+        if(alpha>=beta) break;
+    }
+    return best;
+}
+
 int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int ply) {
-    ++nodes_;
     if(expired()) return 0;
     Stone winner=board.checkWin();
-    if(winner!=Stone::Empty) return winner==color ? SearchScore::Mate-ply : -SearchScore::Mate+ply;
-    if(board.getHistory().size()==225) return 0;
-    if(depth<=0) return std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);
+    if(winner!=Stone::Empty) { ++nodes_; return winner==color ? SearchScore::Mate-ply : -SearchScore::Mate+ply; }
+    if(board.getHistory().size()==225) { ++nodes_; return 0; }
+    if(depth<=0) {
+        if(options_.quiescence) return quiesce(board,color,alpha,beta,ply,options_.quiescenceDepth);
+        ++nodes_;
+        return std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);
+    }
+    ++nodes_;
     uint64_t hash=board.getHash()^(color==Stone::White ? 0x9e3779b97f4a7c15ULL : 0ULL);
     int ttScore; Point ttMove; TTEntry::Flag ttFlag;
     const int originalAlpha=alpha;

@@ -9,7 +9,7 @@ namespace {
 std::map<int,Font> fonts;
 std::vector<int> glyphs;
 std::string fontPath;
-const char* labels=u8"五子棋悔重开切换模式思考中提示鼠标点击落当前黑方白步数获胜！游戏人人对战机玩家执上次搜索深度节点评分必堵后静态一步成多路威胁败势取消旧正在等待无合法着满盘和局异常请";
+const char* labels=u8"五子棋悔重开切换模式思考中提示鼠标点击落当前黑方白步数获胜！游戏人人对战机玩家执上次搜索深度节点评分必堵后静态一步成多路威胁败势取消旧正在等待无合法着满盘和局异常请总止";
 
 bool loadSize(int size) {
     if(fonts.count(size)) return true;

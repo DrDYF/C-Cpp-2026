@@ -22,12 +22,13 @@ void UIPanel::draw(const Board& board, GameMode, bool aiThinking, const SearchRe
         UIText::draw("上次搜索", x, 480, 16, Theme::TEXT_COLOR());
         UIText::draw(TextFormat("深度 %d / 节点 %lld",result.depth,result.nodes), x, 505, 16, DARKGRAY);
         UIText::draw(TextFormat("评分 %+d",result.score), x, 530, 16, DARKGRAY);
+        UIText::draw(TextFormat("静止节点 %lld / 总 %lld",result.quiescenceNodes,result.nodes), x, 550, 12, DARKGRAY);
         const char* reason=result.reason==SearchReason::ForcedDefense ? "必堵 / 落子后静态评分" :
             result.reason==SearchReason::ImmediateWin ? "一步成五" :
             result.reason==SearchReason::MultipleThreatLoss ? "多路成五威胁 / 败势" : "";
-        UIText::draw(reason, x, 550, 12, DARKGRAY);
+        UIText::draw(reason, x, 570, 12, DARKGRAY);
     }
-    UIText::draw("提示:\nZ - 悔棋\nR - 重开\n鼠标点击落子", x, 575, 14, DARKGRAY);
+    UIText::draw("提示:\nZ - 悔棋\nR - 重开\n鼠标点击落子", x, 590, 14, DARKGRAY);
 }
 
 void UIPanel::drawButton(const Button& btn) const {
