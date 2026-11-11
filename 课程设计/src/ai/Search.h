@@ -7,7 +7,7 @@
 #include <atomic>
 #include <array>
 
-enum class SearchReason { Normal, Opening, ImmediateWin, ForcedDefense, MultipleThreatLoss, Fallback };
+enum class SearchReason { Normal, Opening, ImmediateWin, ForcedDefense, MultipleThreatLoss, Fallback, VCFProof };
 enum class SearchStatus { Unavailable, Move, Terminal, Cancelled, NoLegalMove, Error };
 struct SearchResult {
     Point move;
@@ -17,6 +17,8 @@ struct SearchResult {
     SearchReason reason=SearchReason::Normal;
     SearchStatus status=SearchStatus::Unavailable;
     long long quiescenceNodes=0;
+    long long vcfNodes=0;
+    long long vcfWorkUnits=0;
 };
 struct SearchOptions {
     int maxDepth=10;
@@ -26,11 +28,17 @@ struct SearchOptions {
     int rootCandidates=16;
     bool quiescence=true;
     int quiescenceDepth=4;
+    bool vcf=true;
+    int vcfMaxAttackMoves=8;
+    int vcfWorkUnits=30000;
+    int vcfTimeBudgetMs=100;
+    bool threatEvasion=false; // Experimental: slower in paired strength tests.
 };
 struct SearchStats {
     long long nullWindowProbes=0, researches=0, killerHits=0, historyUpdates=0;
     long long quiescenceNodes=0, forcingMoves=0, forcedBlocks=0;
     long long tacticalPriorityFirst=0;
+    long long threatEvasions=0, forcedPrunes=0;
 };
 class Searcher {
 public:
@@ -39,6 +47,7 @@ public:
                         SearchOptions options=SearchOptions{});
     const SearchStats& stats() const { return stats_; }
 private:
+    friend struct SearchRegression;
     int negamax(Board& board,Stone color,int depth,int alpha,int beta,int ply);
     int quiesce(Board& board,Stone color,int alpha,int beta,int ply,int remaining);
     int childScore(Board& board,Stone color,int depth,int alpha,int beta,int ply,bool first);

@@ -60,7 +60,7 @@ int Searcher::childScore(Board& board,Stone color,int depth,int alpha,int beta,i
 SearchResult Searcher::search(const Board& board,Stone color,int timeLimitMs,const std::atomic<bool>* cancel,SearchOptions options) {
     cancel_=cancel; nodes_=0; timeUp_=false; options_=options; stats_=SearchStats{};
     options_.quiescenceDepth=std::clamp(options_.quiescenceDepth,0,8);
-    const int leafMode=options_.quiescence ? options_.quiescenceDepth : -1;
+    const int leafMode=options_.quiescence ? options_.quiescenceDepth+(options_.threatEvasion?16:0) : -1;
     if(leafMode!=ttQuiescenceDepth_) {
         tt_.clear();
         ttQuiescenceDepth_=leafMode;
@@ -101,9 +101,11 @@ SearchResult Searcher::search(const Board& board,Stone color,int timeLimitMs,con
         }
         if(timeUp_) break;
         result.move=best; result.score=score; result.depth=depth;
-        // A proven win cannot improve beyond the shortest winning line. A proven loss
-        // must keep searching: deeper iterations may find the longest resistance.
-        if(score>=SearchScore::MateThreshold) break;
+        // Only an immediate win or a next-turn double winning point is exact
+        // at the root. Longer mate scores come from capped candidate search;
+        // keep deepening to allow omitted defensive resources to surface.
+        // AIEngine handles independently proven VCF wins before this search.
+        if(score>=SearchScore::Mate-3) break;
     }
     result.nodes=nodes_+stats_.quiescenceNodes;
     result.quiescenceNodes=stats_.quiescenceNodes;
@@ -159,13 +161,23 @@ int Searcher::quiesce(Board& board,Stone color,int alpha,int beta,int ply,int re
         return value;
     }
 
+    bool mustEvade=false;
+    if(options_.threatEvasion) for(Point move:candidates) {
+        if(evaluator_.moveThreats(board,move)[1-ownIndex].decisiveThreat()) mustEvade=true;
+    }
     const int standPat=std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);
-    if(remaining<=0 || ply>=63 || forcing.empty()) return standPat;
-    if(standPat>=beta) return standPat;
-    if(standPat>alpha) alpha=standPat;
+    if(remaining<=0 || ply>=63) return standPat;
+    if(mustEvade) {
+        // No fictitious pass when the opponent can create a decisive four.
+        // The forcing list includes both endpoint prevention and counter-fours.
+        ++stats_.threatEvasions;
+    } else {
+        if(forcing.empty() || standPat>=beta) return standPat;
+        if(standPat>alpha) alpha=standPat;
+    }
     std::stable_sort(forcing.begin(),forcing.end());
 
-    int best=standPat;
+    int best=mustEvade ? -INF : standPat;
     for(const ScoredMove& candidate:forcing) {
         if(expired()) return 0;
         const Point move=candidate.move;
@@ -207,6 +219,24 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
     auto moves=moveGen_.generateMoves(board,color,12);
     if(expired()) return 0;
     if(moves.empty()) return 0;
+    const int own=color==Stone::Black?0:1;
+    std::vector<Point> blocks;
+    for(Point move:moves) {
+        const auto scores=evaluator_.evaluateMovePair(board,move);
+        if(scores[own]>=ShapeScore::FIVE) {
+            ++stats_.forcedPrunes;
+            return SearchScore::Mate-(ply+1);
+        }
+        if(scores[1-own]>=ShapeScore::FIVE) blocks.push_back(move);
+    }
+    if(blocks.size()>1) {
+        ++stats_.forcedPrunes;
+        return -SearchScore::Mate+(ply+2);
+    }
+    if(blocks.size()==1) {
+        moves=blocks;
+        ++stats_.forcedPrunes;
+    }
     tt_.probe(hash,0,ttScore,ttMove,ttFlag,ply);
     orderMoves(board,moves,color,ply,ttMove);
     int bestScore=-INF; Point bestMove=moves.front(); bool first=true;

@@ -4,6 +4,12 @@
 #include <array>
 #include <vector>
 
+struct MoveThreat {
+    bool five=false;
+    int fours=0, openFours=0, threes=0;
+    bool forcing() const { return five || fours>0; }
+    bool decisiveThreat() const { return openFours>0 || fours>1 || (fours>0 && threes>0); }
+};
 struct MoveEvalStats { long long lineScans=0,cacheHits=0; };
 class Evaluator {
 public:
@@ -12,6 +18,7 @@ public:
     int evaluateFull(const Board& board,Stone color) const;
     int evaluateMove(const Board& board,Point p,Stone color);
     std::array<int,2> evaluateMovePair(const Board& board,Point p);
+    std::array<MoveThreat,2> moveThreats(const Board& board,Point p);
     int evaluateMoveReference(const Board& board,Point p,Stone color) const;
     MoveEvalStats moveStats() const { return moveStats_; }
     void resetMoveStats() { moveStats_={}; }

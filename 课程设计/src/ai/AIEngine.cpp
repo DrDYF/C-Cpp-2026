@@ -4,9 +4,9 @@
 #include <vector>
 
 AIEngine::AIEngine()
-    : moveGen_(evaluator_), searcher_(evaluator_, moveGen_) {}
+    : moveGen_(evaluator_), searcher_(evaluator_, moveGen_), vcfSearcher_(evaluator_) {}
 
-SearchResult AIEngine::think(const Board& board,int timeLimitMs,const std::atomic<bool>* cancel) {
+SearchResult AIEngine::think(const Board& board,int timeLimitMs,const std::atomic<bool>* cancel,SearchOptions options) {
     const auto start=std::chrono::steady_clock::now();
     auto cancelled=[] { SearchResult r; r.status=SearchStatus::Cancelled; return r; };
     if(cancel && cancel->load()) return cancelled();
@@ -39,10 +39,26 @@ SearchResult AIEngine::think(const Board& board,int timeLimitMs,const std::atomi
         return {block,defendedScore,1,tacticalNodes,SearchReason::ForcedDefense,SearchStatus::Move};
     }
     int elapsed=static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count());
-    SearchResult result=searcher_.search(board,current,std::max(1,timeLimitMs-elapsed),cancel);
+    int remaining=std::max(1,timeLimitMs-elapsed);
+    if(options.vcf && remaining>0) {
+        VCFOptions vcfOptions;
+        vcfOptions.maxAttackMoves=options.vcfMaxAttackMoves;
+        vcfOptions.maxWorkUnits=options.vcfWorkUnits;
+        vcfOptions.timeBudgetMs=std::min(options.vcfTimeBudgetMs,remaining);
+        VCFResult vcf=vcfSearcher_.find(board,current,vcfOptions,cancel);
+        if(vcf.status==VCFStatus::Proven && vcf.move.isValid()) {
+            SearchResult result{vcf.move,SearchScore::Mate-vcf.attackMoves,vcf.attackMoves,
+                                tacticalNodes+vcf.nodes,SearchReason::VCFProof,SearchStatus::Move};
+            result.vcfNodes=vcf.nodes;
+            result.vcfWorkUnits=vcf.workUnits;
+            return result;
+        }
+        if(cancel && cancel->load()) return cancelled();
+        elapsed=static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count());
+        remaining=std::max(1,timeLimitMs-elapsed);
+    }
+    SearchResult result=searcher_.search(board,current,remaining,cancel,options);
     result.nodes+=tacticalNodes;
-    // Own immediate wins were ruled out. Two distinct opponent winning squares
-    // cannot both be occupied now: search best resistance, report a proven loss.
     if(opponentWins.size()>1 && result.status==SearchStatus::Move) {
         result.score=-SearchScore::Mate+2; result.reason=SearchReason::MultipleThreatLoss;
     }

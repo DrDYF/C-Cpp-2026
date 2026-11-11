@@ -105,6 +105,19 @@ std::array<int,2> Evaluator::evaluateMovePair(const Board& board,Point p) {
     }
     return {combine(shapes[0]),combine(shapes[1])};
 }
+std::array<MoveThreat,2> Evaluator::moveThreats(const Board& board,Point p) {
+    std::array<MoveThreat,2> result{};
+    if(!p.isValid() || board.at(p)!=Stone::Empty) return result;
+    evaluateMovePair(board,p);
+    for(int c=0;c<2;++c) for(int d=0;d<4;++d) {
+        const auto shape=moveShapes_[p.y*15+p.x][d][c];
+        result[c].five |= shape==ShapeType::FIVE;
+        result[c].fours += shape==ShapeType::FOUR || shape==ShapeType::BLOCKED_FOUR;
+        result[c].openFours += shape==ShapeType::FOUR;
+        result[c].threes += shape==ShapeType::THREE;
+    }
+    return result;
+}
 int Evaluator::evaluateMove(const Board& board,Point p,Stone color) {
     return evaluateMovePair(board,p)[color==Stone::Black?0:1];
 }
