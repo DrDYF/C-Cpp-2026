@@ -19,6 +19,7 @@ struct SearchResult {
     long long quiescenceNodes=0;
     long long vcfNodes=0;
     long long vcfWorkUnits=0;
+    long long elapsedMs=0; // 由调用方填写的墙钟耗时，用于棋谱
 };
 struct SearchOptions {
     int maxDepth=10;

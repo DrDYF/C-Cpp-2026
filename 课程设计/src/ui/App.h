@@ -1,6 +1,7 @@
 #pragma once
 #include "raylib.h"
 #include "core/Board.h"
+#include "core/GameRecord.h"
 #include "ai/AIEngine.h"
 #include "Renderer.h"
 #include "UIPanel.h"
@@ -23,7 +24,8 @@ private:
     void handlePlayerMove(Point p);
     void handleAIMove();
     void invalidateSearch();
-    void resetGame();
+    void resetGame(const char* recordEnd="reset");
+    void startRecord();
     void undoTurn();
     Board board_;
     Renderer renderer_;
@@ -40,4 +42,6 @@ private:
     uint64_t failedRevision_=~uint64_t{0};
     std::string aiError_;
     SearchResult lastSearch_;
+    GameRecordWriter record_;
+    static constexpr int AI_BUDGET_MS=1500;
 };
