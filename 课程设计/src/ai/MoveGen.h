@@ -12,10 +12,13 @@ struct ScoredMove {
         return score>other.score;
     }
 };
+enum class MoveTierMode { Structural, LegacyScore };
+
 class MoveGenerator {
 public:
     explicit MoveGenerator(Evaluator& evaluator);
-    std::vector<Point> generateMoves(const Board& board,Stone color,int maxCount=16);
+    std::vector<Point> generateMoves(const Board& board,Stone color,int maxCount=16,
+                                     MoveTierMode mode=MoveTierMode::Structural);
 private:
     Evaluator& evaluator_;
 };

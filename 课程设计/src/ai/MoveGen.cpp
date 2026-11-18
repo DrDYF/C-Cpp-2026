@@ -4,7 +4,7 @@
 
 MoveGenerator::MoveGenerator(Evaluator& evaluator):evaluator_(evaluator) {}
 
-std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,int maxCount) {
+std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,int maxCount,MoveTierMode mode) {
     if(maxCount<=0 || board.checkWin()!=Stone::Empty) return {};
     std::vector<ScoredMove> scored;
     scored.reserve(std::min(225,maxCount)+16);
@@ -14,15 +14,15 @@ std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,i
         if(!board.isCandidate(p) || board.at(p)!=Stone::Empty) continue;
         const auto pair=evaluator_.evaluateMovePair(board,p);
         const int attack=pair[own], defense=pair[1-own];
-        const bool wins=attack>=ShapeScore::FIVE;
-        const bool blocksWin=defense>=ShapeScore::FIVE;
-        const bool blocksFour=defense>=ShapeScore::BLOCKED_FOUR;
-        const bool makesFour=attack>=ShapeScore::BLOCKED_FOUR;
-
-        // Separate tactical classes. If the opponent has an immediate win,
-        // blocking that point outranks a non-winning attack; an immediate win
-        // by us outranks every defense.
-        const int tier=wins ? 0 : blocksWin ? 1 : blocksFour ? 2 : makesFour ? 3 : 4;
+        int tier;
+        if(mode==MoveTierMode::LegacyScore) {
+            tier=attack>=ShapeScore::FIVE ? 0 : defense>=ShapeScore::FIVE ? 1 :
+                 defense>=ShapeScore::BLOCKED_FOUR ? 2 : attack>=ShapeScore::BLOCKED_FOUR ? 3 : 4;
+        } else {
+            const auto threats=evaluator_.moveThreats(board,p);
+            tier=threats[own].five ? 0 : threats[1-own].five ? 1 :
+                 threats[1-own].fours>0 ? 2 : threats[own].fours>0 ? 3 : 4;
+        }
         int score=attack+defense*11/10;
         score=score*4+28-(std::abs(p.x-7)+std::abs(p.y-7));
         scored.push_back({p,score,tier});

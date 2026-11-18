@@ -15,9 +15,10 @@ void Searcher::orderMoves(const Board& board,std::vector<Point>& moves,Stone col
     const int own=color==Stone::Black?0:1;
     for(Point p:moves) {
         const auto pair=evaluator_.evaluateMovePair(board,p);
+        const auto threats=evaluator_.moveThreats(board,p);
         const int attack=pair[own], defense=pair[1-own];
-        int tier=attack>=ShapeScore::FIVE ? 0 : defense>=ShapeScore::FIVE ? 1 :
-                 defense>=ShapeScore::BLOCKED_FOUR ? 2 : attack>=ShapeScore::BLOCKED_FOUR ? 3 : 6;
+        int tier=threats[own].five ? 0 : threats[1-own].five ? 1 :
+                 threats[1-own].fours>0 ? 2 : threats[own].fours>0 ? 3 : 6;
         // Quiet TT/killer moves are useful, but never outrank direct wins,
         // immediate blocks, or four-making/ four-blocking tactical tiers.
         if(tier==6 && p==ttMove) tier=4;
@@ -125,7 +126,8 @@ int Searcher::quiesce(Board& board,Stone color,int alpha,int beta,int ply,int re
     // pass cheap and, importantly, the winning points are handled before stand-pat.
     const Stone opponent=color==Stone::Black ? Stone::White : Stone::Black;
     const int ownIndex=color==Stone::Black ? 0 : 1;
-    std::vector<Point> candidates=moveGen_.generateMoves(board,color,225);
+    // 保留旧分层，否则 forcing 的稳定排序会改变同分着法的先后。
+    std::vector<Point> candidates=moveGen_.generateMoves(board,color,225,MoveTierMode::LegacyScore);
     if(expired()) return 0;
     if(candidates.empty())
         return std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);

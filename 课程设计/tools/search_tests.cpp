@@ -17,6 +17,19 @@ struct SearchRegression {
                 "unique mandatory block must search exactly one child");
         require(board.getHistory().size()==4,"forced response did not restore board");
     }
+    static void tacticalTiers() {
+        Board board;
+        for(Point p:{Point(6,7),Point(8,7),Point(7,6),Point(7,8),Point(9,1),Point(10,1),Point(11,1)})
+            require(board.place(p,Stone::Black),"order fixture");
+        require(board.place(Point(8,1),Stone::White),"blocked four fixture");
+        Evaluator evaluator; MoveGenerator generator(evaluator); Searcher search(evaluator,generator);
+        const Point cross(7,7), four(12,1);
+        for(Stone side:{Stone::Black,Stone::White}) {
+            std::vector<Point> moves{cross,four};
+            search.orderMoves(board,moves,side,0,cross);
+            require(moves.front()==four,"a real four must outrank a double-three TT move");
+        }
+    }
     static void threatenedLeaf() {
         Board board;
         for(int x=5;x<=7;++x) require(board.place(Point(x,7),Stone::Black),"leaf threat fixture");
@@ -34,6 +47,7 @@ struct SearchRegression {
 int main() {
     SearchRegression::threatenedLeaf();
     SearchRegression::forcedResponses();
+    SearchRegression::tacticalTiers();
     for(int fixture=0;fixture<3;++fixture) {
         Board b;
         for(Point p:{Point(7,7),Point(8,7),Point(6,8),Point(8,8),Point(7,9),Point(9,7)}) b.place(p,b.getCurrentPlayer());
