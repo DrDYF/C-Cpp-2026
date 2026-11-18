@@ -34,7 +34,101 @@ void verify(const Board& board) {
         require(actual.count(y*15+x)==expected,"enumerated candidate bitset differs from invariant");
     }
 }
+void retainsCounterFour() {
+    // axial-10-1：第 55 手黑走 (11,4)，白反冲 (5,13) 可形成两个胜点。
+    const std::array<Point,54> prefix={{
+        {7,7},{8,7},{9,6},{10,6},{8,5},{10,7},
+        {7,6},{9,7},{9,4},{6,7},{7,5},{7,4},
+        {9,5},{6,5},{11,5},{10,5},{10,3},{11,2},
+        {9,2},{9,3},{10,8},{6,8},{6,6},{5,6},
+        {8,3},{7,8},{8,9},{8,8},{5,8},{7,9},
+        {6,10},{5,7},{4,6},{4,7},{3,8},{11,7},
+        {12,7},{8,10},{9,11},{7,11},{3,7},{5,5},
+        {4,5},{8,2},{10,4},{5,4},{5,3},{7,10},
+        {7,12},{6,4},{4,4},{7,3},{9,1},{6,12}
+    }};
+    Board board;
+    for(Point p:prefix)
+        require(board.place(p,board.getCurrentPlayer()),"invalid axial-10-1 replay");
+    require(board.place(Point(11,4),Stone::Black) && board.checkWin()==Stone::Empty &&
+            board.getCurrentPlayer()==Stone::White,"invalid axial-10-1 move 55");
+
+    const Point reply(5,13);
+    Board after=board;
+    require(after.place(reply,Stone::White) && after.checkWin()==Stone::Empty,"invalid white counter-four");
+    for(Point endpoint:{Point(9,9),Point(4,14)}) {
+        Board finish=after;
+        require(finish.place(endpoint,Stone::White) && finish.checkWin()==Stone::White,
+                "counter-four endpoint must complete five");
+    }
+    for(int y=0;y<BoardConst::SIZE;++y) for(int x=0;x<BoardConst::SIZE;++x) {
+        const Point p(x,y);
+        if(after.at(p)!=Stone::Empty) continue;
+        Board black=after;
+        require(black.place(p,Stone::Black) && black.checkWin()!=Stone::Black,
+                "black must not have an immediate counter-win");
+    }
+
+    Evaluator evaluator; MoveGenerator generator(evaluator);
+    const auto candidates=generator.generateMoves(board,Stone::White,12);
+    require(std::find(candidates.begin(),candidates.end(),reply)!=candidates.end(),
+            "axial-10-1: internal candidates omitted white counter-four (5,13)");
+}
+
+bool retainsForkReply(const std::vector<Point>& history,Point reply,
+                      const std::array<Point,2>& endpoints,const char* name) {
+    Board board;
+    for(Point p:history)
+        require(board.place(p,board.getCurrentPlayer()),"invalid fork regression replay");
+    require(board.getCurrentPlayer()==Stone::White && board.checkWin()==Stone::Empty,
+            "expected a nonterminal position with white to move");
+
+    Board after=board;
+    require(after.place(reply,Stone::White) && after.checkWin()==Stone::Empty,"invalid fork reply");
+    for(Point endpoint:endpoints) {
+        Board finish=after;
+        require(finish.place(endpoint,Stone::White) && finish.checkWin()==Stone::White,
+                "fork endpoint must complete five");
+    }
+    for(int y=0;y<BoardConst::SIZE;++y) for(int x=0;x<BoardConst::SIZE;++x) {
+        const Point p(x,y);
+        if(after.at(p)!=Stone::Empty) continue;
+        Board black=after;
+        require(black.place(p,Stone::Black) && black.checkWin()!=Stone::Black,
+                "black must not have an immediate counter-win");
+    }
+
+    Evaluator evaluator; MoveGenerator generator(evaluator);
+    const auto candidates=generator.generateMoves(board,Stone::White,12);
+    if(std::find(candidates.begin(),candidates.end(),reply)!=candidates.end()) return true;
+    std::cerr<<name<<": cap 12 omitted ("<<reply.x<<','<<reply.y<<")\n";
+    return false;
+}
+
+void verifyForkReplies() {
+    const bool first=retainsForkReply({
+        {7,7},{8,8},{6,6},{4,7},{9,9},{4,8},
+        {9,7},{4,6},{4,5},{6,8},{8,7},{5,8},
+        {7,8},{3,8},{2,8},{4,9},{4,10},{6,7},
+        {7,6},{3,10},{2,11},{7,9},{9,6}
+    },Point(5,7),{Point(3,5),Point(8,10)},"diagonal-06-3");
+    const bool second=retainsForkReply({
+        {7,7},{8,8},{9,6},{7,5},{10,9},{8,6},
+        {8,7},{9,7},{10,8},{10,6},{11,5},{9,8},
+        {9,9},{7,8},{8,10},{7,9},{6,10},{7,11},
+        {11,7},{12,6},{7,10},{9,10},{5,10},{4,10},
+        {11,6},{5,8},{6,8},{11,8},{10,5},{11,4},
+        {12,5},{9,5},{9,4},{12,7},{6,7},{6,9},
+        {6,4},{4,9},{5,9},{4,8},{4,7},{5,7},
+        {6,6},{6,5},{8,5},{4,11},{4,12},{5,11},
+        {7,4}
+    },Point(6,11),{Point(3,11),Point(8,11)},"diagonal-09-2");
+    require(first && second,"cap 12 must retain both fork replies");
+}
+
 int main() {
+    retainsCounterFour();
+    verifyForkReplies();
     Board board; verify(board);
     std::mt19937 rng(0xCA7D1);
     for(int game=0;game<32;++game) {

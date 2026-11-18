@@ -7,6 +7,7 @@ struct ScoredMove {
     Point move;
     int score;
     int tier=4;
+    bool retainFork=false;
     bool operator<(const ScoredMove& other) const {
         if(tier!=other.tier) return tier<other.tier;
         return score>other.score;
