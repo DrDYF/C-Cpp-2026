@@ -1,4 +1,5 @@
 #include "Search.h"
+#include "QuiescentOrder.h"
 #include <algorithm>
 #include <cstdlib>
 
@@ -122,12 +123,10 @@ int Searcher::quiesce(Board& board,Stone color,int alpha,int beta,int ply,int re
         return winner==color ? SearchScore::Mate-ply : -SearchScore::Mate+ply;
     if(board.getHistory().size()==225) return 0;
 
-    // 复用生成候选时的双边评分；先处理成五点，再考虑静态分数。
     const Stone opponent=color==Stone::Black ? Stone::White : Stone::Black;
     const int ownIndex=color==Stone::Black ? 0 : 1;
-    // 保留旧分层，否则 forcing 的稳定排序会改变同分着法的先后。
     std::array<std::array<int,2>,225> candidateScores;
-    std::vector<Point> candidates=moveGen_.generateMoves(board,color,225,MoveTierMode::LegacyScore,&candidateScores);
+    const auto candidates=collectQuiescentScores(board,evaluator_,candidateScores);
     if(expired()) return 0;
     if(candidates.empty())
         return std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);
@@ -177,7 +176,7 @@ int Searcher::quiesce(Board& board,Stone color,int alpha,int beta,int ply,int re
         if(forcing.empty() || standPat>=beta) return standPat;
         if(standPat>alpha) alpha=standPat;
     }
-    std::stable_sort(forcing.begin(),forcing.end());
+    sortQuiescentMoves(forcing,candidateScores,ownIndex);
 
     int best=mustEvade ? -INF : standPat;
     for(const ScoredMove& candidate:forcing) {

@@ -1,5 +1,7 @@
 #include "ai/Search.h"
+#include "ai/QuiescentOrder.h"
 #include <iostream>
+#include <random>
 #include <stdexcept>
 void require(bool ok,const char* why) { if(!ok) throw std::runtime_error(why); }
 struct SearchRegression {
@@ -44,7 +46,79 @@ struct SearchRegression {
         require(board.getHistory().size()==3,"leaf evasions failed to restore board");
     }
 };
+
+namespace {
+using Scores = std::array<std::array<int,2>,225>;
+int boards=0, tactical=0, ties=0, recursions=0;
+
+auto forcing(const std::vector<Point>& candidates,const Scores& scores,int own) {
+    std::vector<ScoredMove> result;
+    for(Point p:candidates) {
+        const auto pair=scores[p.y*15+p.x];
+        const int a=pair[own],d=pair[1-own];
+        if(d<ShapeScore::FIVE && (a>=ShapeScore::BLOCKED_FOUR || d>=ShapeScore::BLOCKED_FOUR))
+            result.push_back({p,a+d*11/10});
+    }
+    return result;
+}
+
+void check(const Board& board,Evaluator& e) {
+    if(board.checkWin()!=Stone::Empty) return;
+    ++boards;
+    MoveGenerator gen(e);
+    for(Stone side:{Stone::Black,Stone::White}) {
+        const int own=side==Stone::Black?0:1;
+        Scores expected,actual;
+        for(auto& row:expected) row={-1,-1};
+        actual=expected;
+        const auto baseline=gen.generateMoves(board,side,225,MoveTierMode::LegacyScore,&expected);
+        auto candidates=collectQuiescentScores(board,e,actual);
+        if(expected!=actual) throw std::runtime_error("candidate scores differ");
+        const auto id=[](Point a){return a.y*15+a.x;};
+        auto membership=baseline;
+        std::sort(membership.begin(),membership.end(),[&](Point a,Point b){return id(a)<id(b);});
+        if(membership!=candidates) throw std::runtime_error("candidate members or board order differ");
+        auto slow=forcing(baseline,expected,own), fast=forcing(candidates,actual,own);
+        std::stable_sort(slow.begin(),slow.end());
+        sortQuiescentMoves(fast,actual,own);
+        if(slow.size()!=fast.size()) throw std::runtime_error("size mismatch");
+        if(slow.size()>1) ++recursions;
+        for(size_t i=0;i<slow.size();++i) {
+            if(slow[i].move!=fast[i].move || slow[i].score!=fast[i].score) throw std::runtime_error("forcing order differs");
+            if(i && slow[i-1].score==slow[i].score) ++ties;
+            ++tactical;
+        }
+    }
+}
+
+void checkQuiescentOrder() {
+    std::mt19937 rng(20261119);
+    Evaluator e;
+    for(int trial=0;trial<36;++trial) {
+        Board b;
+        e.beginPosition(b);
+        check(b,e);
+        for(int turn=0;turn<54 && b.checkWin()==Stone::Empty;++turn) {
+            const int span=trial%2?15:9, offset=(15-span)/2;
+            Point p;
+            do { const unsigned i=rng()%(span*span); p=Point(i%span+offset,i/span+offset); } while(b.at(p)!=Stone::Empty);
+            require(b.place(p,b.getCurrentPlayer()),"invalid order test move");
+            e.makeMove(b,p);
+            if(turn%2==0) check(b,e);
+        }
+        int undone=0;
+        while(b.undo()) {
+            e.unmakeMove();
+            if(++undone%3==0) check(b,e);
+        }
+    }
+    require(boards>=1000 && ties>=100 && recursions>=100,"insufficient quiescence order test coverage");
+    std::cout<<"Quiescence move order passed: "<<boards<<" positions, "<<ties<<" equal-score pairs\n";
+}
+}
+
 int main() {
+    checkQuiescentOrder();
     SearchRegression::threatenedLeaf();
     SearchRegression::forcedResponses();
     SearchRegression::tacticalTiers();
