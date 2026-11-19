@@ -44,6 +44,7 @@ private:
     bool valid_=false;
     std::array<std::array<std::array<ShapeType,2>,4>,225> moveShapes_{};
     std::array<uint8_t,225> moveValid_{};
+    std::array<std::array<int,2>,225> movePair_{};
     uint64_t moveHash_=0;
     bool moveCacheValid_=false;
     MoveEvalStats moveStats_;

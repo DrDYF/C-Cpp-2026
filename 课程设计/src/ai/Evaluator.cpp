@@ -86,6 +86,10 @@ std::array<int,2> Evaluator::evaluateMovePair(const Board& board,Point p) {
     if(!p.isValid() || board.at(p)!=Stone::Empty) return {-1,-1};
     syncMoveCache(board);
     const int index=p.y*15+p.x;
+    if(moveValid_[index]==0xF) {
+        moveStats_.cacheHits+=4;
+        return movePair_[index];
+    }
     std::array<std::array<ShapeType,4>,2> shapes{};
     for(int d=0;d<4;++d) {
         if(!(moveValid_[index]&(1u<<d))) {
@@ -103,7 +107,8 @@ std::array<int,2> Evaluator::evaluateMovePair(const Board& board,Point p) {
         } else ++moveStats_.cacheHits;
         for(int c=0;c<2;++c) shapes[c][d]=moveShapes_[index][d][c];
     }
-    return {combine(shapes[0]),combine(shapes[1])};
+    movePair_[index]={combine(shapes[0]),combine(shapes[1])};
+    return movePair_[index];
 }
 std::array<MoveThreat,2> Evaluator::moveThreats(const Board& board,Point p) {
     std::array<MoveThreat,2> result{};
