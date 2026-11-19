@@ -19,7 +19,8 @@ class MoveGenerator {
 public:
     explicit MoveGenerator(Evaluator& evaluator);
     std::vector<Point> generateMoves(const Board& board,Stone color,int maxCount=16,
-                                     MoveTierMode mode=MoveTierMode::Structural);
+                                     MoveTierMode mode=MoveTierMode::Structural,
+                                     std::array<std::array<int,2>,225>* scores=nullptr);
 private:
     Evaluator& evaluator_;
 };

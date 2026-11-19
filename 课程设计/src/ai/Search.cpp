@@ -122,12 +122,12 @@ int Searcher::quiesce(Board& board,Stone color,int alpha,int beta,int ply,int re
         return winner==color ? SearchScore::Mate-ply : -SearchScore::Mate+ply;
     if(board.getHistory().size()==225) return 0;
 
-    // Score both sides' candidate points together. The move cache makes this second
-    // pass cheap and, importantly, the winning points are handled before stand-pat.
+    // 复用生成候选时的双边评分；先处理成五点，再考虑静态分数。
     const Stone opponent=color==Stone::Black ? Stone::White : Stone::Black;
     const int ownIndex=color==Stone::Black ? 0 : 1;
     // 保留旧分层，否则 forcing 的稳定排序会改变同分着法的先后。
-    std::vector<Point> candidates=moveGen_.generateMoves(board,color,225,MoveTierMode::LegacyScore);
+    std::array<std::array<int,2>,225> candidateScores;
+    std::vector<Point> candidates=moveGen_.generateMoves(board,color,225,MoveTierMode::LegacyScore,&candidateScores);
     if(expired()) return 0;
     if(candidates.empty())
         return std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);
@@ -137,7 +137,7 @@ int Searcher::quiesce(Board& board,Stone color,int alpha,int beta,int ply,int re
     std::vector<ScoredMove> forcing;
     ownWins.reserve(4); opponentWins.reserve(4); forcing.reserve(12);
     for(Point move:candidates) {
-        const auto scores=evaluator_.evaluateMovePair(board,move);
+        const auto& scores=candidateScores[move.y*15+move.x];
         const int attack=scores[ownIndex];
         const int defense=scores[1-ownIndex];
         if(attack>=ShapeScore::FIVE) ownWins.push_back(move);

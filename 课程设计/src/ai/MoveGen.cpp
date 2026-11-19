@@ -4,7 +4,8 @@
 
 MoveGenerator::MoveGenerator(Evaluator& evaluator):evaluator_(evaluator) {}
 
-std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,int maxCount,MoveTierMode mode) {
+std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,int maxCount,MoveTierMode mode,
+                                               std::array<std::array<int,2>,225>* scores) {
     if(maxCount<=0 || board.checkWin()!=Stone::Empty) return {};
     std::vector<ScoredMove> scored;
     scored.reserve(std::min(225,maxCount)+16);
@@ -13,6 +14,7 @@ std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,i
         Point p(x,y);
         if(!board.isCandidate(p) || board.at(p)!=Stone::Empty) continue;
         const auto pair=evaluator_.evaluateMovePair(board,p);
+        if(scores) (*scores)[p.y*15+p.x]=pair;
         const int attack=pair[own], defense=pair[1-own];
         int tier;
         bool retainFork=false;
