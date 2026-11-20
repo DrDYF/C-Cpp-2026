@@ -8,12 +8,11 @@ inline std::vector<Point> collectQuiescentScores(const Board& board,Evaluator& e
                                                  std::array<std::array<int,2>,225>& scores) {
     std::vector<Point> candidates;
     candidates.reserve(225);
-    for(int y=0;y<BoardConst::SIZE;++y) for(int x=0;x<BoardConst::SIZE;++x) {
-        const Point p(x,y);
-        if(!board.isCandidate(p) || board.at(p)!=Stone::Empty) continue;
-        scores[y*15+x]=evaluator.evaluateMovePair(board,p);
+    board.forEachCandidate([&](Point p) {
+        if(board.at(p)!=Stone::Empty) return;
+        scores[p.y*15+p.x]=evaluator.evaluateMovePair(board,p);
         candidates.push_back(p);
-    }
+    });
     return candidates;
 }
 

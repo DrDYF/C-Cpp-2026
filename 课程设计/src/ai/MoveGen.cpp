@@ -10,9 +10,8 @@ std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,i
     std::vector<ScoredMove> scored;
     scored.reserve(std::min(225,maxCount)+16);
     const int own=color==Stone::Black?0:1;
-    for(int y=0;y<BoardConst::SIZE;++y) for(int x=0;x<BoardConst::SIZE;++x) {
-        Point p(x,y);
-        if(!board.isCandidate(p) || board.at(p)!=Stone::Empty) continue;
+    board.forEachCandidate([&](Point p) {
+        if(board.at(p)!=Stone::Empty) return;
         const auto& analysis=evaluator_.analyzeMove(board,p);
         if(scores) (*scores)[p.y*15+p.x]={analysis[0].score,analysis[1].score};
         const int attack=analysis[own].score, defense=analysis[1-own].score;
@@ -30,7 +29,7 @@ std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,i
         int score=attack+defense*11/10;
         score=score*4+28-(std::abs(p.x-7)+std::abs(p.y-7));
         scored.push_back({p,score,tier,retainFork});
-    }
+    });
     const auto less=[](const ScoredMove& a,const ScoredMove& b) {
         if(a<b) return true;
         if(b<a) return false;

@@ -2,6 +2,9 @@
 #include "Types.h"
 #include <array>
 #include <vector>
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
 
 class Board {
 public:
@@ -25,6 +28,16 @@ public:
     // Incrementally maintained empty points within the configured radius of a stone.
     // The empty board exposes the center point as its opening candidate.
     void appendCandidates(std::vector<Point>& out) const;
+    // 行优先遍历；访问期间不得修改棋盘。
+    template<class Visitor>
+    void forEachCandidate(Visitor&& visit) const {
+        for(std::size_t word=0;word<candidateBits_.size();++word) {
+            for(uint64_t bits=candidateBits_[word];bits;bits&=bits-1) {
+                const int id=static_cast<int>(word*64)+candidateLowBit(bits);
+                visit(Point(id%BoardConst::SIZE,id/BoardConst::SIZE));
+            }
+        }
+    }
     bool isCandidate(Point p) const;
     uint8_t nearbyStoneCount(Point p) const;
 
@@ -46,6 +59,19 @@ private:
     inline int cellId(int x,int y) const { return y*BoardConst::SIZE+x; }
     void updateCandidate(Point p);
     void setCandidate(int id,bool enabled);
+    static int candidateLowBit(uint64_t bits) {
+#if defined(__GNUC__) || defined(__clang__)
+        return __builtin_ctzll(bits);
+#elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64))
+        unsigned long bit;
+        _BitScanForward64(&bit,bits);
+        return static_cast<int>(bit);
+#else
+        int bit=0;
+        for(;!(bits&1);bits>>=1) ++bit;
+        return bit;
+#endif
+    }
     bool candidateBit(int id) const { return (candidateBits_[id>>6]>>(id&63))&1ULL; }
     
     // 检查从某点开始的某个方向是否有五连

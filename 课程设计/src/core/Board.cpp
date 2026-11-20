@@ -40,8 +40,7 @@ void Board::updateCandidate(Point p) {
 void Board::appendCandidates(std::vector<Point>& out) const {
     out.clear();
     out.reserve(225);
-    for(int id=0;id<225;++id) if(candidateBit(id))
-        out.emplace_back(id%BoardConst::SIZE,id/BoardConst::SIZE);
+    forEachCandidate([&](Point p) { out.push_back(p); });
 }
 
 bool Board::isCandidate(Point p) const {
