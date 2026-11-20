@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 
 enum class ShapeType : int { NONE, DEAD, SLEEP_TWO, TWO, SLEEP_THREE, THREE, BLOCKED_FOUR, FOUR, FIVE };
@@ -11,6 +12,8 @@ class PatternRecognizer {
 public:
     PatternRecognizer();
     ShapeType recognizeLine(const int8_t* line, int8_t color) const;
+    // 分别将中心视为黑棋和白棋。
+    std::array<ShapeType,2> recognizeLandingLine(const int8_t* line) const;
     static int getScore(ShapeType shape);
     // Full line scoring groups overlapping windows by their original stone set.
     int scoreLine(const int8_t* line, int length, int8_t color) const;

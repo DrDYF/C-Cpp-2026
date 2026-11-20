@@ -125,10 +125,7 @@ const MoveAnalysis& Evaluator::analyzeMove(const Board& board,Point p) {
                 Point q(p.x+dirs[d][0]*i,p.y+dirs[d][1]*i);
                 line[i+4]=q.isValid()?static_cast<int8_t>(board.at(q)):-1;
             }
-            for(int c=0;c<2;++c) {
-                line[4]=static_cast<int8_t>(c+1);
-                moveShapes_[index][d][c]=pattern_.recognizeLine(line,static_cast<int8_t>(c+1));
-            }
+            moveShapes_[index][d]=pattern_.recognizeLandingLine(line);
             moveValid_[index]|=static_cast<uint8_t>(1u<<d);
             ++moveStats_.lineScans;
         } else ++moveStats_.cacheHits;

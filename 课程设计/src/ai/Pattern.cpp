@@ -91,6 +91,24 @@ ShapeType PatternRecognizer::recognizeLine(const int8_t* line,int8_t color) cons
     return static_cast<ShapeType>(shapeTable()[code]);
 }
 
+std::array<ShapeType,2> PatternRecognizer::recognizeLandingLine(const int8_t* line) const {
+    static constexpr auto packed=[] {
+        std::array<uint32_t,256> digits{};
+        for(unsigned i=0;i<digits.size();++i) {
+            const unsigned black=i==1 ? 1 : i==0 ? 0 : 2;
+            const unsigned white=i==2 ? 1 : i==0 ? 0 : 2;
+            digits[i]=black|(white<<16);
+        }
+        return digits;
+    }();
+    constexpr unsigned weight[]={1,3,9,27,0,81,243,729,2187};
+    uint32_t key=0;
+    // 黑白索引至多 6560，累加不会在两个 16 位字段间进位。
+    for(int i=0;i<9;++i) if(i!=4) key+=packed[static_cast<uint8_t>(line[i])]*weight[i];
+    const auto& table=shapeTable();
+    return {static_cast<ShapeType>(table[key&0xFFFFu]),static_cast<ShapeType>(table[key>>16])};
+}
+
 int PatternRecognizer::getScore(ShapeType shape) {
     constexpr int scores[]={0,0,ShapeScore::SLEEP_TWO,ShapeScore::TWO,ShapeScore::SLEEP_THREE,
         ShapeScore::THREE,ShapeScore::BLOCKED_FOUR,ShapeScore::FOUR,ShapeScore::FIVE};
