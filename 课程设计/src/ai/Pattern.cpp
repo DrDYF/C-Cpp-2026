@@ -82,52 +82,48 @@ int PatternRecognizer::getScore(ShapeType shape) {
 
 int PatternRecognizer::scoreLine(const int8_t* raw,int n,int8_t color) const {
     if(n<5) return 0;
-    std::array<int8_t,15> line{};
-    for(int i=0;i<n;++i) line[i]=raw[i]==color ? 1 : raw[i]==0 ? 0 : 2;
-    struct Group { unsigned stones=0, ends=0; int count=0, score=0; };
-    std::array<Group,15> groups{};
-    int count=0;
-    for(int s=0;s+5<=n;++s) {
-        unsigned mask=0, empty=0;
-        bool blocked=false;
-        for(int i=s;i<s+5;++i) {
-            if(line[i]==1) mask|=1u<<i;
-            else if(line[i]==0) empty|=1u<<i;
-            else blocked=true;
-        }
-        int stones=bits(mask);
-        if(blocked || stones<2) continue;
-        int g=0;
-        while(g<count && groups[g].stones!=mask) ++g;
-        if(g==count) { groups[g].stones=mask; groups[g].count=stones; ++count; }
-        groups[g].ends |= empty;
+    unsigned own=0,empty=0;
+    for(int i=0;i<n;++i) {
+        if(raw[i]==color) own|=1u<<i;
+        else if(raw[i]==0) empty|=1u<<i;
     }
-    for(int g=0;g<count;++g) {
-        Group& v=groups[g];
-        if(v.count==5) v.score=ShapeScore::FIVE;
-        else if(v.count==4) v.score=bits(v.ends)>=2 ? ShapeScore::FOUR : ShapeScore::BLOCKED_FOUR;
-        else if(v.count==3) {
-            v.score=ShapeScore::SLEEP_THREE;
-            for(int k=0;k<n;++k) if(line[k]==0) {
-                line[k]=1;
-                int wins=bits(winningSquares(line.data(),n,v.stones|(1u<<k)));
-                line[k]=0;
-                if(wins>=2) { v.score=ShapeScore::THREE; break; }
-            }
-        } else {
-            int lo=0,hi=n-1;
-            while(!(v.stones&(1u<<lo))) ++lo;
-            while(!(v.stones&(1u<<hi))) --hi;
-            bool open=lo>0 && hi+1<n && line[lo-1]==0 && line[hi+1]==0 && hi-lo<=2;
-            v.score=open ? ShapeScore::TWO : ShapeScore::SLEEP_TWO;
+    if((own & (own-1))==0) return 0;
+    const unsigned blocked=~(own|empty);
+    struct Group { unsigned stones,ends; int count; bool openThree; };
+    std::array<Group,11> groups;
+    int count=0;
+    for(int start=0;start+5<=n;++start) {
+        const unsigned window=31u<<start;
+        if(window&blocked) continue;
+        const unsigned stones=window&own;
+        if((stones&(stones-1))==0) continue;
+        const unsigned holes=window&empty;
+        int g=0;
+        while(g<count && groups[g].stones!=stones) ++g;
+        if(g==count) groups[count++]={stones,holes,bits(stones),false};
+        else {
+            // 同一组三子的两个窗口若共享空点，在该点落子后有两个成五点。
+            groups[g].openThree|=(groups[g].ends&holes)!=0;
+            groups[g].ends|=holes;
         }
     }
     int total=0;
     for(int g=0;g<count;++g) {
+        const auto& v=groups[g];
         bool subset=false;
-        for(int h=0;h<count;++h) if(groups[h].count>groups[g].count &&
-            (groups[h].stones & groups[g].stones)==groups[g].stones) { subset=true; break; }
-        if(!subset) total+=groups[g].score;
+        for(int h=0;h<count;++h) if(groups[h].count>v.count &&
+            (groups[h].stones&v.stones)==v.stones) { subset=true; break; }
+        if(subset) continue;
+        if(v.count==5) total+=ShapeScore::FIVE;
+        else if(v.count==4) total+=(v.ends&(v.ends-1))!=0 ? ShapeScore::FOUR : ShapeScore::BLOCKED_FOUR;
+        else if(v.count==3) total+=v.openThree ? ShapeScore::THREE : ShapeScore::SLEEP_THREE;
+        else {
+            int lo=0,hi=n-1;
+            while(!(v.stones&(1u<<lo))) ++lo;
+            while(!(v.stones&(1u<<hi))) --hi;
+            const bool open=lo>0 && hi+1<n && hi-lo<=2 && (empty&(1u<<(lo-1))) && (empty&(1u<<(hi+1)));
+            total+=open ? ShapeScore::TWO : ShapeScore::SLEEP_TWO;
+        }
     }
     return total;
 }
