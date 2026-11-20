@@ -15,11 +15,10 @@ void Searcher::orderMoves(const Board& board,std::vector<Point>& moves,Stone col
     std::array<int,225> scores{};
     const int own=color==Stone::Black?0:1;
     for(Point p:moves) {
-        const auto pair=evaluator_.evaluateMovePair(board,p);
-        const auto threats=evaluator_.moveThreats(board,p);
-        const int attack=pair[own], defense=pair[1-own];
-        int tier=threats[own].five ? 0 : threats[1-own].five ? 1 :
-                 threats[1-own].fours>0 ? 2 : threats[own].fours>0 ? 3 : 6;
+        const auto& analysis=evaluator_.analyzeMove(board,p);
+        const int attack=analysis[own].score, defense=analysis[1-own].score;
+        int tier=analysis[own].five ? 0 : analysis[1-own].five ? 1 :
+                 analysis[1-own].fours>0 ? 2 : analysis[own].fours>0 ? 3 : 6;
         // Quiet TT/killer moves are useful, but never outrank direct wins,
         // immediate blocks, or four-making/ four-blocking tactical tiers.
         if(tier==6 && p==ttMove) tier=4;

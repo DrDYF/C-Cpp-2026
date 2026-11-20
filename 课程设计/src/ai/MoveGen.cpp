@@ -13,20 +13,19 @@ std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,i
     for(int y=0;y<BoardConst::SIZE;++y) for(int x=0;x<BoardConst::SIZE;++x) {
         Point p(x,y);
         if(!board.isCandidate(p) || board.at(p)!=Stone::Empty) continue;
-        const auto pair=evaluator_.evaluateMovePair(board,p);
-        if(scores) (*scores)[p.y*15+p.x]=pair;
-        const int attack=pair[own], defense=pair[1-own];
+        const auto& analysis=evaluator_.analyzeMove(board,p);
+        if(scores) (*scores)[p.y*15+p.x]={analysis[0].score,analysis[1].score};
+        const int attack=analysis[own].score, defense=analysis[1-own].score;
         int tier;
         bool retainFork=false;
         if(mode==MoveTierMode::LegacyScore) {
             tier=attack>=ShapeScore::FIVE ? 0 : defense>=ShapeScore::FIVE ? 1 :
                  defense>=ShapeScore::BLOCKED_FOUR ? 2 : attack>=ShapeScore::BLOCKED_FOUR ? 3 : 4;
         } else {
-            const auto threats=evaluator_.moveThreats(board,p);
-            tier=threats[own].five ? 0 : threats[1-own].five ? 1 :
-                 threats[1-own].fours>0 ? 2 : threats[own].fours>0 ? 3 : 4;
+            tier=analysis[own].five ? 0 : analysis[1-own].five ? 1 :
+                 analysis[1-own].fours>0 ? 2 : analysis[own].fours>0 ? 3 : 4;
             // 同方向有两个胜点，或不同方向各有一个胜点。
-            retainFork=threats[own].openFours>0 || threats[own].fours>1;
+            retainFork=analysis[own].openFours>0 || analysis[own].fours>1;
         }
         int score=attack+defense*11/10;
         score=score*4+28-(std::abs(p.x-7)+std::abs(p.y-7));

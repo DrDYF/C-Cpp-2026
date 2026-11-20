@@ -10,6 +10,12 @@ struct MoveThreat {
     bool forcing() const { return five || fours>0; }
     bool decisiveThreat() const { return openFours>0 || fours>1 || (fours>0 && threes>0); }
 };
+struct LandingAnalysis {
+    int score;
+    bool five;
+    std::uint8_t fours,openFours,threes;
+};
+using MoveAnalysis=std::array<LandingAnalysis,2>;
 struct MoveEvalStats { long long lineScans=0,cacheHits=0; };
 class Evaluator {
 public:
@@ -17,6 +23,7 @@ public:
     int evaluate(const Board& board,Stone color);
     int evaluateFull(const Board& board,Stone color) const;
     int evaluateMove(const Board& board,Point p,Stone color);
+    const MoveAnalysis& analyzeMove(const Board& board,Point p);
     std::array<int,2> evaluateMovePair(const Board& board,Point p);
     std::array<MoveThreat,2> moveThreats(const Board& board,Point p);
     int evaluateMoveReference(const Board& board,Point p,Stone color) const;
@@ -44,7 +51,7 @@ private:
     bool valid_=false;
     std::array<std::array<std::array<ShapeType,2>,4>,225> moveShapes_{};
     std::array<uint8_t,225> moveValid_{};
-    std::array<std::array<int,2>,225> movePair_{};
+    std::array<MoveAnalysis,225> moveAnalysis_{};
     uint64_t moveHash_=0;
     bool moveCacheValid_=false;
     MoveEvalStats moveStats_;
