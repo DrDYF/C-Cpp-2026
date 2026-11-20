@@ -58,20 +58,37 @@ ShapeType classify(std::array<int8_t,9> line) {
     }
     return sleepTwo ? ShapeType::SLEEP_TWO : ShapeType::NONE;
 }
+const std::array<uint8_t,6561>& shapeTable() {
+    // 中心格恒为己子，索引只编码其余八格。
+    static const auto table=[] {
+        std::array<uint8_t,6561> out{};
+        std::array<int8_t,9> line{};
+        line[4]=1;
+        for(unsigned code=0;code<out.size();++code) {
+            unsigned digits=code;
+            for(int i=0;i<9;++i) if(i!=4) {
+                line[i]=static_cast<int8_t>(digits%3);
+                digits/=3;
+            }
+            out[code]=static_cast<uint8_t>(classify(line));
+        }
+        return out;
+    }();
+    return table;
+}
 }
 
-PatternRecognizer::PatternRecognizer() : shapeTable_(262144,255) {}
+PatternRecognizer::PatternRecognizer() { (void)shapeTable(); }
 
-ShapeType PatternRecognizer::recognizeLine(const int8_t* line, int8_t color) const {
-    std::array<int8_t,9> normalized{};
+ShapeType PatternRecognizer::recognizeLine(const int8_t* line,int8_t color) const {
+    if(line[4]!=color) return ShapeType::NONE;
+    constexpr unsigned weight[]={1,3,9,27,0,81,243,729,2187};
     unsigned code=0;
-    for(int i=0;i<9;++i) {
-        normalized[i]=line[i]==color ? 1 : line[i]==0 ? 0 : 2;
-        code |= static_cast<unsigned>(normalized[i])<<(2*i);
+    for(int i=0;i<9;++i) if(i!=4) {
+        const unsigned digit=line[i]==color ? 1 : line[i]==0 ? 0 : 2;
+        code+=digit*weight[i];
     }
-    uint8_t& cached=shapeTable_[code];
-    if(cached==255) cached=static_cast<uint8_t>(classify(normalized));
-    return static_cast<ShapeType>(cached);
+    return static_cast<ShapeType>(shapeTable()[code]);
 }
 
 int PatternRecognizer::getScore(ShapeType shape) {

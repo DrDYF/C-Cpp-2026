@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <vector>
 
 enum class ShapeType : int { NONE, DEAD, SLEEP_TWO, TWO, SLEEP_THREE, THREE, BLOCKED_FOUR, FOUR, FIVE };
 namespace ShapeScore {
@@ -15,6 +14,4 @@ public:
     static int getScore(ShapeType shape);
     // Full line scoring groups overlapping windows by their original stone set.
     int scoreLine(const int8_t* line, int length, int8_t color) const;
-private:
-    mutable std::vector<uint8_t> shapeTable_;
 };
