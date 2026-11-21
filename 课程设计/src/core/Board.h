@@ -21,6 +21,9 @@ public:
     
     // 获取指定位置的棋子
     Stone at(Point p) const;
+    inline static constexpr int LandingDirections[4][2]={{1,0},{0,1},{1,1},{1,-1}};
+    // 中心在盘内，方向按 LandingDirections；盘外格写 -1。
+    void readLandingLine(Point center,int direction,int8_t* line) const;
     
     // 判断胜负（返回获胜方，Empty 表示未分出胜负）
     Stone checkWin() const;

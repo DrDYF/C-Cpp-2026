@@ -1,7 +1,7 @@
 #include "Evaluator.h"
 
 namespace {
-constexpr int dirs[4][2]={{1,0},{0,1},{1,1},{1,-1}};
+constexpr auto& dirs=Board::LandingDirections;
 constexpr MoveAnalysis invalidMove{{{-1,false,0,0,0},{-1,false,0,0,0}}};
 
 // 四条方向线相加时，每个棋形计数最多为 4，彼此不进位。
@@ -121,10 +121,7 @@ const MoveAnalysis& Evaluator::analyzeMove(const Board& board,Point p) {
     for(int d=0;d<4;++d) {
         if(!(moveValid_[index]&(1u<<d))) {
             int8_t line[9];
-            for(int i=-4;i<=4;++i) {
-                Point q(p.x+dirs[d][0]*i,p.y+dirs[d][1]*i);
-                line[i+4]=q.isValid()?static_cast<int8_t>(board.at(q)):-1;
-            }
+            board.readLandingLine(p,d,line);
             moveShapes_[index][d]=pattern_.recognizeLandingLine(line);
             moveValid_[index]|=static_cast<uint8_t>(1u<<d);
             ++moveStats_.lineScans;

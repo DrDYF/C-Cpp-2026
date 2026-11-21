@@ -1,5 +1,27 @@
 #include "Board.h"
 #include "Zobrist.h"
+#include <cassert>
+
+namespace {
+constexpr auto buildLandingIndices() {
+    constexpr int size=BoardConst::SIZE;
+    constexpr int padding=BoardConst::PADDING;
+    constexpr int stride=BoardConst::STRIDE;
+    static_assert(padding>0 && stride*stride<=65536);
+    std::array<std::array<std::array<uint16_t,9>,4>,size*size> table{};
+    for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+        auto& entries=table[y*size+x];
+        for(int d=0;d<4;++d) for(int k=-4;k<=4;++k) {
+            const int xx=x+k*Board::LandingDirections[d][0], yy=y+k*Board::LandingDirections[d][1];
+            if(xx>=0 && xx<size && yy>=0 && yy<size)
+                entries[d][k+4]=static_cast<uint16_t>((yy+padding)*stride+xx+padding);
+        }
+    }
+    return table;
+}
+// 盘外坐标映射到 reset 后始终为 -1 的左上填充格。
+constexpr auto landingIndices=buildLandingIndices();
+}
 
 Board::Board() : lastMove_(-1, -1), winner_(Stone::Empty) {
     reset();
@@ -99,6 +121,12 @@ bool Board::undo() {
 Stone Board::at(Point p) const {
     if(!p.isValid()) return Stone::Empty;
     return static_cast<Stone>(cells_[idx(p.x,p.y)]);
+}
+
+void Board::readLandingLine(Point center,int direction,int8_t* line) const {
+    assert(center.isValid() && direction>=0 && direction<4);
+    const auto& offsets=landingIndices[cellId(center.x,center.y)][direction];
+    for(std::size_t i=0;i<offsets.size();++i) line[i]=cells_[offsets[i]];
 }
 
 Stone Board::getCurrentPlayer() const {
