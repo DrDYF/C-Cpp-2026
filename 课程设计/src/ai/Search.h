@@ -52,7 +52,7 @@ private:
     int negamax(Board& board,Stone color,int depth,int alpha,int beta,int ply);
     int quiesce(Board& board,Stone color,int alpha,int beta,int ply,int remaining);
     int childScore(Board& board,Stone color,int depth,int alpha,int beta,int ply,bool first);
-    void orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove);
+    void orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove,bool generated=false);
     void recordCutoff(Point move,Stone color,int depth,int ply);
     bool expired();
     Evaluator& evaluator_;

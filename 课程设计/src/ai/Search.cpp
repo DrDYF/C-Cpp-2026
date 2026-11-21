@@ -9,13 +9,13 @@ bool Searcher::expired() {
     if((cancel_ && cancel_->load()) || std::chrono::steady_clock::now()>=deadline_) timeUp_=true;
     return timeUp_;
 }
-void Searcher::orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove) {
+void Searcher::orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove,bool generated) {
     if(!options_.heuristics || moves.size()<2) return;
     std::array<int,225> tiers{};
     std::array<int,225> scores{};
     const int own=color==Stone::Black?0:1;
     for(Point p:moves) {
-        const auto& analysis=evaluator_.analyzeMove(board,p);
+        const auto& analysis=generated ? evaluator_.readGeneratedAnalysis(board,p) : evaluator_.analyzeMove(board,p);
         const int attack=analysis[own].score, defense=analysis[1-own].score;
         int tier=analysis[own].five ? 0 : analysis[1-own].five ? 1 :
                  analysis[1-own].fours>0 ? 2 : analysis[own].fours>0 ? 3 : 6;
@@ -220,14 +220,15 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
     if(expired()) return 0;
     if(moves.empty()) return 0;
     const int own=color==Stone::Black?0:1;
+    const bool generated=&moveGen_.evaluator_==&evaluator_;
     std::vector<Point> blocks;
     for(Point move:moves) {
-        const auto scores=evaluator_.evaluateMovePair(board,move);
-        if(scores[own]>=ShapeScore::FIVE) {
+        const auto& scores=generated ? evaluator_.readGeneratedAnalysis(board,move) : evaluator_.analyzeMove(board,move);
+        if(scores[own].score>=ShapeScore::FIVE) {
             ++stats_.forcedPrunes;
             return SearchScore::Mate-(ply+1);
         }
-        if(scores[1-own]>=ShapeScore::FIVE) blocks.push_back(move);
+        if(scores[1-own].score>=ShapeScore::FIVE) blocks.push_back(move);
     }
     if(blocks.size()>1) {
         ++stats_.forcedPrunes;
@@ -238,7 +239,7 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
         ++stats_.forcedPrunes;
     }
     tt_.probe(hash,0,ttScore,ttMove,ttFlag,ply);
-    orderMoves(board,moves,color,ply,ttMove);
+    orderMoves(board,moves,color,ply,ttMove,generated);
     int bestScore=-INF; Point bestMove=moves.front(); bool first=true;
     for(Point move:moves) {
         if(expired()) return 0;

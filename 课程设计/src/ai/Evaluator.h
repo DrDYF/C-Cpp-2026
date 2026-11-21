@@ -36,6 +36,14 @@ public:
     void unmakeMove();
 private:
     friend class MoveGenerator;
+    friend class Searcher;
+    const MoveAnalysis& readGeneratedAnalysis(const Board& board,Point p) {
+        assert(p.isValid() && moveCacheValid_ && moveHash_==board.getHash());
+        const int id=p.y*15+p.x;
+        assert(moveValid_[id]==0xF);
+        moveStats_.cacheHits+=4;
+        return moveAnalysis_[id];
+    }
     template<class Visitor>
     void forEachCandidateAnalysis(const Board& board,Visitor&& visit) {
         bool synced=false;

@@ -22,5 +22,6 @@ public:
                                      MoveTierMode mode=MoveTierMode::Structural,
                                      std::array<std::array<int,2>,225>* scores=nullptr);
 private:
+    friend class Searcher;
     Evaluator& evaluator_;
 };
