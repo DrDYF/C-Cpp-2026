@@ -2,6 +2,7 @@
 #include "core/Board.h"
 #include "Pattern.h"
 #include <array>
+#include <cassert>
 #include <vector>
 
 struct MoveThreat {
@@ -34,6 +35,16 @@ public:
     void makeMove(const Board& board,Point p);
     void unmakeMove();
 private:
+    friend class MoveGenerator;
+    template<class Visitor>
+    void forEachCandidateAnalysis(const Board& board,Visitor&& visit) {
+        bool synced=false;
+        board.forEachCandidate([&](Point p) {
+            assert(board.at(p)==Stone::Empty);
+            if(!synced) { syncMoveCache(board); synced=true; }
+            visit(p,analyzeEmptySynced(board,p));
+        });
+    }
     int lineScore(const Board& board,int id,Stone color) const;
     int evaluateColor(const Board& board,Stone color) const;
     const MoveAnalysis& analyzeEmptySynced(const Board& board,Point p);
