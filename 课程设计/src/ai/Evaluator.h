@@ -25,6 +25,7 @@ public:
     int evaluateMove(const Board& board,Point p,Stone color);
     const MoveAnalysis& analyzeMove(const Board& board,Point p);
     std::array<int,2> evaluateMovePair(const Board& board,Point p);
+    std::vector<Point> collectCandidateScores(const Board& board,std::array<std::array<int,2>,225>& scores);
     std::array<MoveThreat,2> moveThreats(const Board& board,Point p);
     int evaluateMoveReference(const Board& board,Point p,Stone color) const;
     MoveEvalStats moveStats() const { return moveStats_; }
@@ -35,6 +36,7 @@ public:
 private:
     int lineScore(const Board& board,int id,Stone color) const;
     int evaluateColor(const Board& board,Stone color) const;
+    const MoveAnalysis& analyzeEmptySynced(const Board& board,Point p);
     void syncMoveCache(const Board& board);
     void invalidateMoveCache(Point p);
     struct Undo {

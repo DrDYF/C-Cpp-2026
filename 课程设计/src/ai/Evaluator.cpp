@@ -1,4 +1,5 @@
 #include "Evaluator.h"
+#include <cassert>
 
 namespace {
 constexpr auto& dirs=Board::LandingDirections;
@@ -113,6 +114,9 @@ int Evaluator::evaluate(const Board& board,Stone color) {
 const MoveAnalysis& Evaluator::analyzeMove(const Board& board,Point p) {
     if(!p.isValid() || board.at(p)!=Stone::Empty) return invalidMove;
     syncMoveCache(board);
+    return analyzeEmptySynced(board,p);
+}
+const MoveAnalysis& Evaluator::analyzeEmptySynced(const Board& board,Point p) {
     const int index=p.y*15+p.x;
     if(moveValid_[index]==0xF) {
         moveStats_.cacheHits+=4;
@@ -133,6 +137,18 @@ const MoveAnalysis& Evaluator::analyzeMove(const Board& board,Point p) {
         totals[1]+=shapeData[static_cast<std::size_t>(dir[1])];
     }
     return moveAnalysis_[index]={unpack(totals[0]),unpack(totals[1])};
+}
+std::vector<Point> Evaluator::collectCandidateScores(const Board& board,std::array<std::array<int,2>,225>& scores) {
+    std::vector<Point> candidates;
+    board.appendCandidates(candidates);
+    if(candidates.empty()) return candidates;
+    syncMoveCache(board);
+    for(Point move:candidates) {
+        assert(board.at(move)==Stone::Empty);
+        const auto& analysis=analyzeEmptySynced(board,move);
+        scores[move.y*15+move.x]={analysis[0].score,analysis[1].score};
+    }
+    return candidates;
 }
 std::array<int,2> Evaluator::evaluateMovePair(const Board& board,Point p) {
     const auto& a=analyzeMove(board,p);

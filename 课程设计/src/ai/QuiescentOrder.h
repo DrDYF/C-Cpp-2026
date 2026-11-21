@@ -6,14 +6,7 @@
 
 inline std::vector<Point> collectQuiescentScores(const Board& board,Evaluator& evaluator,
                                                  std::array<std::array<int,2>,225>& scores) {
-    std::vector<Point> candidates;
-    candidates.reserve(225);
-    board.forEachCandidate([&](Point p) {
-        if(board.at(p)!=Stone::Empty) return;
-        scores[p.y*15+p.x]=evaluator.evaluateMovePair(board,p);
-        candidates.push_back(p);
-    });
-    return candidates;
+    return evaluator.collectCandidateScores(board,scores);
 }
 
 inline void sortQuiescentMoves(std::vector<ScoredMove>& forcing,const std::array<std::array<int,2>,225>& scores,int own) {
