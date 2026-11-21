@@ -17,4 +17,5 @@ public:
     static int getScore(ShapeType shape);
     // Full line scoring groups overlapping windows by their original stone set.
     int scoreLine(const int8_t* line, int length, int8_t color) const;
+    std::array<int,2> scoreLinePair(const int8_t* line, int length) const;
 };

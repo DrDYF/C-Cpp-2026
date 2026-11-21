@@ -44,16 +44,21 @@ int combine(const std::array<ShapeType,4>& shapes) {
     else if(threes>=2) score+=ShapeScore::DOUBLE_THREE;
     return score;
 }
-}
-Evaluator::Evaluator() = default;
-int Evaluator::lineScore(const Board& board,int id,Stone color) const {
+int readEvalLine(const Board& board,int id,int8_t* line) {
     int x=0,y=0,dx=1,dy=0;
     if(id<15) y=id;
     else if(id<30) { x=id-15; dx=0; dy=1; }
     else if(id<59) { int d=id-44; x=d>0?d:0; y=d<0?-d:0; dy=1; }
     else { int sum=id-59; x=sum>14?sum-14:0; y=sum<14?sum:14; dy=-1; }
-    int8_t line[15]; int n=0;
+    int n=0;
     for(Point p(x,y);p.isValid();p=Point(p.x+dx,p.y+dy)) line[n++]=static_cast<int8_t>(board.at(p));
+    return n;
+}
+}
+Evaluator::Evaluator() = default;
+int Evaluator::lineScore(const Board& board,int id,Stone color) const {
+    int8_t line[15];
+    const int n=readEvalLine(board,id,line);
     return pattern_.scoreLine(line,n,static_cast<int8_t>(color));
 }
 int Evaluator::evaluateColor(const Board& board,Stone color) const {
@@ -90,10 +95,12 @@ void Evaluator::makeMove(const Board& board,Point p) {
     saved.totals=totals_; saved.hash=hash_; saved.move=p;
     for(int k=0;k<4;++k) {
         int id=saved.ids[k]; saved.scores[k]=scores_[id];
-        for(int c=0;c<2;++c) {
-            int updated=lineScore(board,id,c==0?Stone::Black:Stone::White);
-            totals_[c]+=updated-scores_[id][c]; scores_[id][c]=updated;
-        }
+        int8_t line[15];
+        const int n=readEvalLine(board,id,line);
+        // 两边评分共用本次落子后的盘面，避免重复取线和编码空位。
+        const auto updated=pattern_.scoreLinePair(line,n);
+        for(int c=0;c<2;++c) totals_[c]+=updated[c]-scores_[id][c];
+        scores_[id]=updated;
     }
     if(!moveCacheValid_ || moveHash_!=hash_) moveValid_.fill(0);
     else invalidateMoveCache(p);

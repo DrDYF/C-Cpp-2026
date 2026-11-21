@@ -115,13 +115,8 @@ int PatternRecognizer::getScore(ShapeType shape) {
     return scores[static_cast<int>(shape)];
 }
 
-int PatternRecognizer::scoreLine(const int8_t* raw,int n,int8_t color) const {
-    if(n<5) return 0;
-    unsigned own=0,empty=0;
-    for(int i=0;i<n;++i) {
-        if(raw[i]==color) own|=1u<<i;
-        else if(raw[i]==0) empty|=1u<<i;
-    }
+namespace {
+int scoreMasks(unsigned own,unsigned empty,int n) {
     if((own & (own-1))==0) return 0;
     const unsigned blocked=~(own|empty);
     struct Group { unsigned stones,ends; int count; bool openThree; };
@@ -161,4 +156,27 @@ int PatternRecognizer::scoreLine(const int8_t* raw,int n,int8_t color) const {
         }
     }
     return total;
+}
+}
+
+int PatternRecognizer::scoreLine(const int8_t* raw,int n,int8_t color) const {
+    if(n<5) return 0;
+    unsigned own=0,empty=0;
+    for(int i=0;i<n;++i) {
+        if(raw[i]==color) own|=1u<<i;
+        else if(raw[i]==0) empty|=1u<<i;
+    }
+    return scoreMasks(own,empty,n);
+}
+
+std::array<int,2> PatternRecognizer::scoreLinePair(const int8_t* raw,int n) const {
+    if(n<5) return {};
+    unsigned black=0,white=0,empty=0;
+    for(int i=0;i<n;++i) {
+        const unsigned bit=1u<<i;
+        if(raw[i]==0) empty|=bit;
+        else if(raw[i]==1) black|=bit;
+        else if(raw[i]==2) white|=bit;
+    }
+    return {scoreMasks(black,empty,n),scoreMasks(white,empty,n)};
 }
