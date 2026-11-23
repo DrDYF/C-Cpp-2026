@@ -208,7 +208,10 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
         return std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);
     }
     ++nodes_;
+    const bool retainReply=options_.retainFourThreeReply && ply==1;
     uint64_t hash=board.getHash()^(color==Stone::White ? 0x9e3779b97f4a7c15ULL : 0ULL);
+    // 候选不同的节点不能共用分数界，尤其是换手后同一盘面移到了另一层时。
+    if(retainReply) hash^=0xd1b54a32d192ed03ULL;
     int ttScore; Point ttMove; TTEntry::Flag ttFlag;
     const int originalAlpha=alpha;
     if(tt_.probe(hash,depth,ttScore,ttMove,ttFlag,ply)) {
@@ -216,7 +219,9 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
         if(ttFlag==TTEntry::ALPHA && ttScore<=alpha) return ttScore;
         if(ttFlag==TTEntry::BETA && ttScore>=beta) return ttScore;
     }
-    auto moves=moveGen_.generateMoves(board,color,12);
+    Point omittedFourThree;
+    auto moves=moveGen_.generateMoves(board,color,12,MoveTierMode::Structural,nullptr,
+                                      retainReply ? &omittedFourThree : nullptr);
     if(expired()) return 0;
     if(moves.empty()) return 0;
     const int own=color==Stone::Black?0:1;
@@ -237,6 +242,8 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
     if(blocks.size()==1) {
         moves=blocks;
         ++stats_.forcedPrunes;
+    } else if(omittedFourThree.isValid()) {
+        moves.push_back(omittedFourThree);
     }
     tt_.probe(hash,0,ttScore,ttMove,ttFlag,ply);
     orderMoves(board,moves,color,ply,ttMove,generated);

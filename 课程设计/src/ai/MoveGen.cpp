@@ -5,7 +5,8 @@
 MoveGenerator::MoveGenerator(Evaluator& evaluator):evaluator_(evaluator) {}
 
 std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,int maxCount,MoveTierMode mode,
-                                               std::array<std::array<int,2>,225>* scores) {
+                                               std::array<std::array<int,2>,225>* scores,Point* omittedFourThree) {
+    if(omittedFourThree) *omittedFourThree=Point{};
     if(maxCount<=0 || board.checkWin()!=Stone::Empty) return {};
     std::vector<ScoredMove> scored;
     scored.reserve(std::min(225,maxCount)+16);
@@ -38,6 +39,16 @@ std::vector<Point> MoveGenerator::generateMoves(const Board& board,Stone color,i
     std::partial_sort(scored.begin(),middle,scored.end(),less);
     auto end=std::partition(middle,scored.end(),[](const ScoredMove& m){return m.tier<=2 || m.retainFork;});
     std::sort(middle,end,less);
+    if(omittedFourThree && mode==MoveTierMode::Structural) {
+        // 只查看被截掉的冲四，沿用已计算的棋形和排名，不重造候选或排序。
+        auto best=scored.end();
+        for(auto it=end;it!=scored.end();++it) {
+            if(it->tier!=3 || (best!=scored.end() && !less(*it,*best))) continue;
+            const auto& attack=evaluator_.readGeneratedAnalysis(board,it->move)[own];
+            if(attack.threes>0) best=it;
+        }
+        if(best!=scored.end()) *omittedFourThree=best->move;
+    }
     std::vector<Point> result;
     result.reserve(end-scored.begin());
     for(auto it=scored.begin();it!=end;++it) result.push_back(it->move);

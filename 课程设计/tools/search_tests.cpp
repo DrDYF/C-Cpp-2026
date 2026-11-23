@@ -1,5 +1,6 @@
 #include "ai/Search.h"
 #include "ai/QuiescentOrder.h"
+#include "regressions/four_three/cases.h"
 #include <iostream>
 #include <random>
 #include <stdexcept>
@@ -44,6 +45,88 @@ struct SearchRegression {
         require(search.stats().threatEvasions>0 && search.stats().forcingMoves>0,
                 "threatened leaf used stand-pat cutoff without searching a real defense");
         require(board.getHistory().size()==3,"leaf evasions failed to restore board");
+    }
+    static void fourThreeReplies() {
+        const auto place=[](Board& board,Point move) {
+            require(board.place(move,board.getCurrentPlayer()) && board.checkWin()==Stone::Empty,
+                    "invalid four-three certificate position");
+        };
+        const auto wins=[](Board board,Stone side) {
+            std::vector<Point> result;
+            for(int y=0;y<15;++y) for(int x=0;x<15;++x) {
+                Point move(x,y);
+                if(!board.place(move,side)) continue;
+                if(board.checkWin()==side) result.push_back(move);
+                require(board.undo(),"four-three certificate failed to undo");
+            }
+            return result;
+        };
+        for(const auto& fixture:FourThreeFixtures::Cases) {
+            Board root;
+            for(Point move:fixture.prefix) place(root,move);
+            const Stone defender=root.getCurrentPlayer();
+            Board child=root;
+            place(child,fixture.losing);
+            const Stone attacker=child.getCurrentPlayer();
+            require(wins(child,attacker).empty() && wins(child,defender).empty(),"unexpected five before four-three");
+            Board proof=child;
+            place(proof,fixture.attack);
+            require(wins(proof,attacker)==std::vector<Point>{fixture.block} && wins(proof,defender).empty(),
+                    "four-three first attack must force the recorded block");
+            place(proof,fixture.block);
+            place(proof,fixture.fork);
+            require(wins(proof,attacker)==fixture.ends && wins(proof,defender).empty(),
+                    "four-three certificate must produce two winning squares");
+
+            Evaluator evaluator;
+            MoveGenerator generator(evaluator);
+            const auto stock=generator.generateMoves(child,attacker,12);
+            const auto full=generator.generateMoves(child,attacker,225);
+            Point omitted;
+            evaluator.resetMoveStats();
+            const auto capped=generator.generateMoves(child,attacker,12,MoveTierMode::Structural,nullptr,&omitted);
+            require(capped==stock && omitted==fixture.attack && evaluator.moveStats().lineScans==0,
+                    "four-three selection must reuse analysis and leave the original candidates unchanged");
+            require(full.size()>=static_cast<std::size_t>(fixture.attackRank) &&
+                    full[fixture.attackRank-1]==omitted &&
+                    std::find(stock.begin(),stock.end(),omitted)==stock.end(),"unexpected four-three candidate ranking");
+            generator.generateMoves(child,attacker,225,MoveTierMode::Structural,nullptr,&omitted);
+            require(!omitted.isValid(),"four-three already in the list cannot be added twice");
+
+            SearchOptions options;
+            options.maxDepth=6;
+            const auto searchRoot=[&](SearchOptions mode) {
+                Evaluator scoring;
+                MoveGenerator moves(scoring);
+                Searcher engine(scoring,moves);
+                return engine.search(root,defender,15000,nullptr,mode);
+            };
+            auto disabled=options;
+            disabled.retainFourThreeReply=false;
+            const auto before=searchRoot(disabled);
+            const auto after=searchRoot(options);
+            require(before.depth==6 && before.move==fixture.losing && before.score>=SearchScore::MateThreshold,
+                    "disabled search must reproduce the four-three false win");
+            require(after.status==SearchStatus::Move && after.depth==6 && after.move.isValid() &&
+                    root.at(after.move)==Stone::Empty && after.move!=fixture.losing && after.score<SearchScore::MateThreshold,
+                    "enabled search must avoid the proven loss and its false win");
+
+            Searcher engine(evaluator,generator);
+            const auto scoreReply=[&](SearchOptions mode) {
+                evaluator.beginPosition(child);
+                engine.options_=mode;
+                engine.deadline_=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+                const int value=engine.negamax(child,attacker,5,-SearchScore::Infinity,SearchScore::Infinity,1);
+                require(!engine.timeUp_,"four-three reply search did not finish");
+                return value;
+            };
+            const int oldReply=scoreReply(disabled);
+            const int newReply=scoreReply(options);
+            require(oldReply<=-SearchScore::MateThreshold && newReply>=SearchScore::MateThreshold &&
+                    scoreReply(disabled)==oldReply,"four-three candidate policy reused an incompatible TT score");
+            std::cout<<"Four-three "<<fixture.name<<": root "<<before.move.x<<','<<before.move.y<<" -> "
+                     <<after.move.x<<','<<after.move.y<<"; original reply "<<oldReply<<" -> "<<newReply<<'\n';
+        }
     }
 };
 
@@ -122,6 +205,7 @@ int main() {
     SearchRegression::threatenedLeaf();
     SearchRegression::forcedResponses();
     SearchRegression::tacticalTiers();
+    SearchRegression::fourThreeReplies();
     for(int fixture=0;fixture<3;++fixture) {
         Board b;
         for(Point p:{Point(7,7),Point(8,7),Point(6,8),Point(8,8),Point(7,9),Point(9,7)}) b.place(p,b.getCurrentPlayer());
