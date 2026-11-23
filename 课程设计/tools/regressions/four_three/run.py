@@ -6,7 +6,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 
 HERE = Path(__file__).resolve().parent
-GOMUKU = HERE.parents[2]
+PROJECT = HERE.parents[2]
 LOSING = (9, 4)
 MATE_THRESHOLD = 99_999_000
 ENGINE = (
@@ -44,9 +44,10 @@ def instrument(source):
     return source
 
 
-def build(src, output, overlay=None):
+def build(src, output, overlay=None, *, enable_four_three=False):
     files = [overlay if overlay and name == 'ai/Search.cpp' else src / name for name in ENGINE]
-    subprocess.run(['g++', '-std=c++17', '-O3', '-DNDEBUG', f'-I{src}', f'-I{src / "ai"}',
+    flags = ['-DFOUR_THREE_TEST_ENABLED'] if enable_four_three else []
+    subprocess.run(['g++', '-std=c++17', '-O3', '-DNDEBUG', *flags, f'-I{src}', f'-I{src / "ai"}',
                     HERE / 'probe.cpp', *files, '-o', output], check=True, timeout=90)
 
 
@@ -65,19 +66,20 @@ def probe(exe, mode):
 
 def run():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', type=Path, default=GOMUKU / 'src',
-                        help='engine src directory (default: teaching repository)')
+    parser.add_argument('--source', type=Path, default=PROJECT / 'src',
+                        help='engine src directory (default: submission project)')
     parser.add_argument('--expect', choices=('known', 'safe'), default='safe')
     args = parser.parse_args()
     src = args.source.resolve(strict=True)
     with TemporaryDirectory(prefix='gomoku-four-three-') as tmp:
         temp = Path(tmp)
         baseline = temp / 'baseline.exe'
-        build(src, baseline)
+        build(src, baseline, enable_four_three=args.expect == 'safe')
         stock = probe(baseline, 'off')
         x, y, depth, score, *_ = stock['root']
         print('冲四证书通过：唯一挡点和双胜点均由引擎棋盘逐格核验。')
-        print(f'未改动的搜索：第 {depth} 层，选 ({x},{y})，分数 {score}。')
+        mode = '显式开启四三补搜' if args.expect == 'safe' else '冻结基线'
+        print(f'{mode}：第 {depth} 层，选 ({x},{y})，分数 {score}。')
         if args.expect == 'safe':
             require((x, y) != LOSING, '仍选择独立证书已证明会输的 (9,4)')
             print('通过：本盘未选择已证败着。')

@@ -93,16 +93,17 @@ struct SearchRegression {
             generator.generateMoves(child,attacker,225,MoveTierMode::Structural,nullptr,&omitted);
             require(!omitted.isValid(),"four-three already in the list cannot be added twice");
 
-            SearchOptions options;
-            options.maxDepth=6;
+            SearchOptions disabled;
+            require(!disabled.retainFourThreeReply,"submission search must default to the qualified candidate policy");
+            disabled.maxDepth=6;
+            auto options=disabled;
+            options.retainFourThreeReply=true;
             const auto searchRoot=[&](SearchOptions mode) {
                 Evaluator scoring;
                 MoveGenerator moves(scoring);
                 Searcher engine(scoring,moves);
                 return engine.search(root,defender,15000,nullptr,mode);
             };
-            auto disabled=options;
-            disabled.retainFourThreeReply=false;
             const auto before=searchRoot(disabled);
             const auto after=searchRoot(options);
             require(before.depth==6 && before.move==fixture.losing && before.score>=SearchScore::MateThreshold,
