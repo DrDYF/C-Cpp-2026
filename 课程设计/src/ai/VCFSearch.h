@@ -4,6 +4,7 @@
 #include <atomic>
 #include <vector>
 
+namespace vcf_detail { class WinningPoints; }
 enum class VCFStatus { NotProven, Proven, Aborted };
 
 struct VCFOptions {
@@ -21,19 +22,20 @@ struct VCFResult {
     std::vector<Point> attackLine;
 };
 
-// Conservative continuous-four proof search. A proof is returned only when
-// every legal defense to each single winning point is forced; uncertain or
-// bounded-out lines are never treated as wins.
+// 只有所有合法防守都无法破解的连续冲四才返回胜证。
 class VCFSearcher {
 public:
     explicit VCFSearcher(Evaluator& evaluator);
     VCFResult find(const Board& board,Stone attacker,VCFOptions options=VCFOptions{},
                    const std::atomic<bool>* cancel=nullptr);
 private:
-    bool prove(Board& board,Stone attacker,int remaining,Point rootMove,int attackPly,Point& provenMove,int& provenPly);
-    bool winningPoints(Board& board,Stone color,std::vector<Point>& wins);
+    bool prove(Board& board,vcf_detail::WinningPoints& points,Stone attacker,int remaining,
+               Point rootMove,int attackPly,Point& provenMove,int& provenPly);
+    bool winningPoints(const Board& board,const vcf_detail::WinningPoints& points,Stone color,
+                       std::vector<Point>& wins);
     bool tick();
     bool stopped();
+    bool interrupted();
     Evaluator& evaluator_;
     VCFOptions options_;
     const std::atomic<bool>* cancel_=nullptr;

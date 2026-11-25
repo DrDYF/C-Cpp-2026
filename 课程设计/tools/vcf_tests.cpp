@@ -1,5 +1,6 @@
 #include "ai/AIEngine.h"
 #include "ai/VCFSearch.h"
+#include "ai/VCFWinningPoints.h"
 #include <atomic>
 #include <iostream>
 #include <random>
@@ -9,6 +10,39 @@ void require(bool value,const char* reason) { if(!value) throw std::runtime_erro
 void place(Board& board,Point point,Stone color) {
     require(board.place(point,color),"fixture setup failed");
 }
+std::vector<Point> bruteWins(Board& board,Stone color) {
+    std::vector<Point> winning;
+    for(int y=0;y<BoardConst::SIZE;++y) for(int x=0;x<BoardConst::SIZE;++x) {
+        Point p(x,y);
+        if(!board.place(p,color)) continue;
+        if(board.checkWin()==color) winning.push_back(p);
+        board.undo();
+    }
+    return winning;
+}
+
+void checkWinningMasks() {
+    const Point start[]={{0,14},{14,0},{0,0},{0,14}};
+    for(int d=0;d<4;++d) for(Stone side:{Stone::Black,Stone::White}) {
+        Board board;
+        const Point origin=start[d];
+        const int dx=Board::LandingDirections[d][0],dy=Board::LandingDirections[d][1];
+        const auto point=[&](int k) { return Point(origin.x+k*dx,origin.y+k*dy); };
+        for(int i:{0,1,3,4,5}) place(board,point(i),side);
+        vcf_detail::WinningPoints points(board);
+        const auto before=points.find(side);
+        require(before.count()==1 && before.test(point(2).y*BoardConst::SIZE+point(2).x),
+                "only the gap forming an overline can win");
+        const Stone other=side==Stone::Black?Stone::White:Stone::Black;
+        place(board,point(2),other);
+        points.update(point(2),other,true);
+        require(points.find(side).none(),"opponent stone must mask the winning point");
+        require(board.undo(),"fixture undo failed");
+        points.update(point(2),other,false);
+        require(points.find(side)==before,"undo must restore the winning point");
+    }
+}
+
 void checkProof(const Board& board,const VCFResult& result,Stone attacker) {
     require(result.status==VCFStatus::Proven && result.move.isValid(),"expected VCF proof");
     require(!result.attackLine.empty() && result.attackLine.front()==result.move,"proof line missing root move");
@@ -17,11 +51,8 @@ void checkProof(const Board& board,const VCFResult& result,Stone attacker) {
     for(Point attack:result.attackLine) {
         require(after.place(attack,attacker),"proof line attack must be legal");
         if(after.checkWin()==attacker) return;
-        Evaluator evaluator; std::vector<Point> wins; after.appendCandidates(wins);
-        std::vector<Point> winning;
-        for(Point p:wins) if(evaluator.evaluateMove(after,p,attacker)>=ShapeScore::FIVE) {
-            if(after.place(p,attacker)) { if(after.checkWin()==attacker) winning.push_back(p); after.undo(); }
-        }
+        require(bruteWins(after,defender).empty(),"opponent can win immediately");
+        const auto winning=bruteWins(after,attacker);
         require(!winning.empty(),"every nonterminal proof attack must create a winning point");
         if(winning.size()>=2) return;
         require(after.place(winning.front(),defender),"forced defense must be legal");
@@ -30,6 +61,7 @@ void checkProof(const Board& board,const VCFResult& result,Stone attacker) {
     throw std::runtime_error("proof line ended without a win or terminal fork");
 }
 int main() {
+    checkWinningMasks();
     Board fork;
     for(int x=4;x<=6;++x) place(fork,Point(x,7),Stone::Black);
     for(int y=4;y<=6;++y) place(fork,Point(7,y),Stone::Black);

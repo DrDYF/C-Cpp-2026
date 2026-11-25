@@ -17,6 +17,7 @@ public:
     void run();
 private:
     friend struct AppTestAccess;
+    explicit App(int aiBudgetMs);
     void processInput();
     void update();
     void render();
@@ -43,5 +44,6 @@ private:
     std::string aiError_;
     SearchResult lastSearch_;
     GameRecordWriter record_;
-    static constexpr int AI_BUDGET_MS=1500;
+    static constexpr int AI_BUDGET_MS=60000;
+    const int aiBudgetMs_;
 };

@@ -1,13 +1,17 @@
 #include "VCFSearch.h"
+#include "VCFWinningPoints.h"
 #include "Pattern.h"
 #include <algorithm>
 
 VCFSearcher::VCFSearcher(Evaluator& evaluator):evaluator_(evaluator) {}
 
+bool VCFSearcher::interrupted() {
+    return (cancel_ && cancel_->load()) || std::chrono::steady_clock::now()>=deadline_;
+}
+
 bool VCFSearcher::stopped() {
     if(aborted_) return true;
-    if((cancel_ && cancel_->load()) || result_.workUnits>=options_.maxWorkUnits ||
-       std::chrono::steady_clock::now()>=deadline_) {
+    if(result_.workUnits>=options_.maxWorkUnits || interrupted()) {
         aborted_=true;
         return true;
     }
@@ -20,31 +24,33 @@ bool VCFSearcher::tick() {
     return true;
 }
 
-bool VCFSearcher::winningPoints(Board& board,Stone color,std::vector<Point>& wins) {
+bool VCFSearcher::winningPoints(const Board& board,const vcf_detail::WinningPoints& points,
+                               Stone color,std::vector<Point>& wins) {
     wins.clear();
-    std::vector<Point> candidates;
-    board.appendCandidates(candidates);
-    const int side=color==Stone::Black?0:1;
-    for(Point p:candidates) {
-        if(!tick()) return false;
-        const auto scores=evaluator_.evaluateMovePair(board,p);
-        if(scores[side]<ShapeScore::FIVE) continue;
-        if(!board.place(p,color)) continue;
-        const bool won=board.checkWin()==color;
-        board.undo();
-        if(won) wins.push_back(p);
+    const auto mask=points.find(color);
+    long long count=0;
+    board.forEachCandidate([&](Point p) {
+        ++count;
+        if(mask.test(p.y*BoardConst::SIZE+p.x)) wins.push_back(p);
+    });
+    // 批量计入原查询逐格消耗的工作量，保证相同额度仍检查相同的进攻分支。
+    const auto allowed=std::min<long long>(options_.maxWorkUnits-result_.workUnits,count);
+    result_.workUnits+=allowed;
+    if(allowed!=count || interrupted()) {
+        aborted_=true;
+        return false;
     }
     return true;
 }
 
-bool VCFSearcher::prove(Board& board,Stone attacker,int remaining,Point rootMove,
-                        int attackPly,Point& provenMove,int& provenPly) {
+bool VCFSearcher::prove(Board& board,vcf_detail::WinningPoints& points,Stone attacker,
+                        int remaining,Point rootMove,int attackPly,Point& provenMove,int& provenPly) {
     if(!tick()) return false;
     ++result_.nodes;
 
     if(attackPly>=options_.maxAttackMoves) return false;
     std::vector<Point> immediateWins;
-    if(!winningPoints(board,attacker,immediateWins)) return false;
+    if(!winningPoints(board,points,attacker,immediateWins)) return false;
     if(!immediateWins.empty()) {
         provenMove=rootMove.isValid()?rootMove:immediateWins.front();
         provenPly=attackPly+1;
@@ -62,6 +68,7 @@ bool VCFSearcher::prove(Board& board,Stone attacker,int remaining,Point rootMove
         if(!tick()) return false;
         if(evaluator_.evaluateMovePair(board,attack)[attackIndex]<ShapeScore::BLOCKED_FOUR) continue;
         if(!board.place(attack,attacker)) continue;
+        points.update(attack,attacker,true);
 
         bool proof=false;
         int nextPly=attackPly+1;
@@ -71,30 +78,28 @@ bool VCFSearcher::prove(Board& board,Stone attacker,int remaining,Point rootMove
             result_.attackLine=currentLine_;
         } else {
             std::vector<Point> defenderWins, attackerWins;
-            if(!winningPoints(board,defender,defenderWins) || !winningPoints(board,attacker,attackerWins)) {
-                board.undo();
-                currentLine_.pop_back();
-                return false;
-            }
-            // A defender's immediate counter-win always refutes this branch.
-            if(defenderWins.empty() && !attackerWins.empty()) {
+            if(winningPoints(board,points,defender,defenderWins) &&
+               winningPoints(board,points,attacker,attackerWins) &&
+               defenderWins.empty() && !attackerWins.empty()) {
                 if(attackerWins.size()>=2) {
                     proof=true;
                     result_.attackLine=currentLine_;
                 } else if(remaining>1) {
-                    // With exactly one winning square there is only one defense
-                    // that avoids an immediate loss: occupy that square.
+                    // 唯一成五点必须挡住；多个成五点无法用一手全部挡住。
                     const Point block=attackerWins.front();
                     if(board.place(block,defender)) {
+                        points.update(block,defender,true);
                         if(board.checkWin()!=defender)
-                            proof=prove(board,attacker,remaining-1,
+                            proof=prove(board,points,attacker,remaining-1,
                                         rootMove.isValid()?rootMove:attack,
                                         attackPly+1,provenMove,provenPly);
+                        points.update(block,defender,false);
                         board.undo();
                     }
                 }
             }
         }
+        points.update(attack,attacker,false);
         board.undo();
         currentLine_.pop_back();
         if(aborted_) return false;
@@ -123,9 +128,15 @@ VCFResult VCFSearcher::find(const Board& source,Stone attacker,VCFOptions option
         return result_;
     }
     Board board=source;
+    vcf_detail::WinningPoints points(board);
     Point move;
     int attackPly=0;
-    if(prove(board,attacker,options_.maxAttackMoves,Point{},0,move,attackPly)) {
+    if(prove(board,points,attacker,options_.maxAttackMoves,Point{},0,move,attackPly)) {
+        if(interrupted()) {
+            result_.status=VCFStatus::Aborted;
+            result_.attackLine.clear();
+            return result_;
+        }
         result_.status=VCFStatus::Proven;
         result_.move=move;
         result_.attackMoves=attackPly;

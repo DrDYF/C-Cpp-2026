@@ -1,5 +1,7 @@
 ## 实验题目：五子棋AI
 
+正式界面的 AI 每手思考预算最多 60 秒。找到必走着法或搜到主搜索深度上限时会提前落子；超时时使用最后完整层的结果。
+
 ## GUI
 - [raylib](https://github.com/raysan5/raylib)
 - [EasyX](https://easyx.cn/)
