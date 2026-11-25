@@ -34,7 +34,7 @@ struct SearchOptions {
     int vcfWorkUnits=30000;
     int vcfTimeBudgetMs=100;
     bool threatEvasion=false; // Experimental: slower in paired strength tests.
-    bool retainFourThreeReply=true;
+    bool retainFourThreeReply=false; // 未通过同预算续弈验收，提交版暂不默认启用。
     bool retainForcingFours=false;
     bool defendOpenFour=false;
 };

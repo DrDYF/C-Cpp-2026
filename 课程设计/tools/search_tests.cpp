@@ -95,8 +95,10 @@ struct SearchRegression {
             require(!omitted.isValid(),"four-three already in the list cannot be added twice");
 
             SearchOptions options;
+            require(!options.retainFourThreeReply && !options.retainForcingFours && !options.defendOpenFour,
+                    "experimental candidate policies must be off by default in the submission");
             options.maxDepth=6;
-            options.retainForcingFours=false;
+            options.retainFourThreeReply=true;
             const auto searchRoot=[&](SearchOptions mode) {
                 Evaluator scoring;
                 MoveGenerator moves(scoring);

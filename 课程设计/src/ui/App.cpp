@@ -5,7 +5,8 @@
 #include <chrono>
 #include <stdexcept>
 
-App::App() {
+App::App():App(AI_BUDGET_MS) {}
+App::App(int aiBudgetMs):aiBudgetMs_(aiBudgetMs) {
     InitWindow(Theme::WINDOW_WIDTH,Theme::WINDOW_HEIGHT,"五子棋 Gomoku");
     if(!UIText::load()) { CloseWindow(); throw std::runtime_error("Chinese UI font not found"); }
     SetTargetFPS(60);
@@ -37,7 +38,7 @@ void App::startRecord() {
     const bool humanBlack=gameMode_==GameMode::PVE_BLACK;
     record_.begin(std::string(GetApplicationDirectory())+"records",
                   std::string("mode=")+(humanBlack?"pve_black":"pve_white")+" human="+(humanBlack?"B":"W")+
-                  " budget_ms="+std::to_string(AI_BUDGET_MS));
+                  " budget_ms="+std::to_string(aiBudgetMs_));
 }
 void App::resetGame(const char* recordEnd) {
     invalidateSearch();
@@ -113,7 +114,7 @@ void App::handleAIMove() {
     searchRevision_=revision_;
     pending_=std::async(std::launch::async,[this,snapshot,token] {
         const auto start=std::chrono::steady_clock::now();
-        SearchResult result=aiEngine_.think(snapshot,AI_BUDGET_MS,token.get());
+        SearchResult result=aiEngine_.think(snapshot,aiBudgetMs_,token.get());
         result.elapsedMs=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
         return result;
     });

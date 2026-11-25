@@ -110,12 +110,23 @@ struct AppTestAccess {
         }
         std::cout<<"UI input, opening, cancellation, failure recovery and undo regressions passed\n";
     }
+    static void runShortBudget() {
+        // 交互回归不需要耗尽正式比赛的思考预算。
+        App app(1500);
+        run(app);
+    }
+    static void checkReleaseBudget(const App& app) {
+        require(app.aiBudgetMs_==60000,"release AI budget must be 60 seconds");
+    }
 };
 int main() {
     for(int i=0;i<5;++i) {
         SetConfigFlags(FLAG_WINDOW_HIDDEN);
-        auto app=std::make_unique<App>();
-        if(i==4) AppTestAccess::run(*app);
+        if(i==4) AppTestAccess::runShortBudget();
+        else {
+            App app;
+            AppTestAccess::checkReleaseBudget(app);
+        }
         std::cout<<"Debug start "<<i+1<<" passed\n";
     }
 }
