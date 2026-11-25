@@ -34,7 +34,9 @@ struct SearchOptions {
     int vcfWorkUnits=30000;
     int vcfTimeBudgetMs=100;
     bool threatEvasion=false; // Experimental: slower in paired strength tests.
-    bool retainFourThreeReply=false; // 未通过同预算续弈验收，提交版暂不默认启用。
+    bool retainFourThreeReply=true;
+    bool retainForcingFours=false;
+    bool defendOpenFour=false;
 };
 struct SearchStats {
     long long nullWindowProbes=0, researches=0, killerHits=0, historyUpdates=0;
@@ -53,7 +55,8 @@ private:
     int negamax(Board& board,Stone color,int depth,int alpha,int beta,int ply);
     int quiesce(Board& board,Stone color,int alpha,int beta,int ply,int remaining);
     int childScore(Board& board,Stone color,int depth,int alpha,int beta,int ply,bool first);
-    void orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove,bool generated=false);
+    void orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove,
+                    bool generated=false,const MoveMask* priority=nullptr);
     void recordCutoff(Point move,Stone color,int depth,int ply);
     bool expired();
     Evaluator& evaluator_;

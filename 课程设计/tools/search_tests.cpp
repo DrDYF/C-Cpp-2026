@@ -12,6 +12,7 @@ struct SearchRegression {
         Evaluator evaluator; MoveGenerator generator(evaluator); Searcher search(evaluator,generator);
         evaluator.beginPosition(board);
         search.deadline_=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+        search.options_.defendOpenFour=true;
         int win=search.negamax(board,Stone::Black,3,-SearchScore::Infinity,SearchScore::Infinity,0);
         require(win==SearchScore::Mate-1 && search.nodes_==1,"own immediate win must finish without child expansion");
         search.stats_=SearchStats{}; search.nodes_=0;
@@ -93,17 +94,17 @@ struct SearchRegression {
             generator.generateMoves(child,attacker,225,MoveTierMode::Structural,nullptr,&omitted);
             require(!omitted.isValid(),"four-three already in the list cannot be added twice");
 
-            SearchOptions disabled;
-            require(!disabled.retainFourThreeReply,"submission search must default to the qualified candidate policy");
-            disabled.maxDepth=6;
-            auto options=disabled;
-            options.retainFourThreeReply=true;
+            SearchOptions options;
+            options.maxDepth=6;
+            options.retainForcingFours=false;
             const auto searchRoot=[&](SearchOptions mode) {
                 Evaluator scoring;
                 MoveGenerator moves(scoring);
                 Searcher engine(scoring,moves);
                 return engine.search(root,defender,15000,nullptr,mode);
             };
+            auto disabled=options;
+            disabled.retainFourThreeReply=false;
             const auto before=searchRoot(disabled);
             const auto after=searchRoot(options);
             require(before.depth==6 && before.move==fixture.losing && before.score>=SearchScore::MateThreshold,
@@ -113,18 +114,29 @@ struct SearchRegression {
                     "enabled search must avoid the proven loss and its false win");
 
             Searcher engine(evaluator,generator);
-            const auto scoreReply=[&](SearchOptions mode) {
+            const auto scoreReply=[&](SearchOptions mode,int ply=1) {
                 evaluator.beginPosition(child);
                 engine.options_=mode;
                 engine.deadline_=std::chrono::steady_clock::now()+std::chrono::seconds(15);
-                const int value=engine.negamax(child,attacker,5,-SearchScore::Infinity,SearchScore::Infinity,1);
+                const int value=engine.negamax(child,attacker,5,-SearchScore::Infinity,SearchScore::Infinity,ply);
                 require(!engine.timeUp_,"four-three reply search did not finish");
+                require(child.getHistory().size()==root.getHistory().size()+1 &&
+                        child.at(fixture.losing)==defender,"reply search did not restore the board");
                 return value;
             };
             const int oldReply=scoreReply(disabled);
             const int newReply=scoreReply(options);
             require(oldReply<=-SearchScore::MateThreshold && newReply>=SearchScore::MateThreshold &&
                     scoreReply(disabled)==oldReply,"four-three candidate policy reused an incompatible TT score");
+            auto allFours=disabled;
+            allFours.retainForcingFours=true;
+            const int oldInnerReply=scoreReply(disabled,3);
+            const int newInnerReply=scoreReply(allFours,3);
+            require(oldInnerReply<=-SearchScore::MateThreshold && newInnerReply>=SearchScore::MateThreshold &&
+                    scoreReply(disabled,3)==oldInnerReply,"inner forcing-four policy missed the reply or reused its TT score");
+            const auto covered=searchRoot(allFours);
+            require(covered.depth==6 && covered.move.isValid() && covered.move!=fixture.losing &&
+                    covered.score<SearchScore::MateThreshold,"forcing-four search kept a false root win");
             std::cout<<"Four-three "<<fixture.name<<": root "<<before.move.x<<','<<before.move.y<<" -> "
                      <<after.move.x<<','<<after.move.y<<"; original reply "<<oldReply<<" -> "<<newReply<<'\n';
         }
@@ -235,6 +247,7 @@ int main() {
         for(int x=5;x<=7;++x) require(threat.place(point(x,7),attacker),"open three fixture");
         Evaluator defenseEval; MoveGenerator defenseGen(defenseEval); Searcher defenseSearch(defenseEval,defenseGen);
         SearchOptions defenseOptions; defenseOptions.maxDepth=1; defenseOptions.quiescenceDepth=4;
+        defenseOptions.defendOpenFour=true;
         auto defended=defenseSearch.search(threat,defender,2000,nullptr,defenseOptions);
         require(defended.move==point(4,7) || defended.move==point(8,7),"shallow search must prevent opponent open four");
         std::cout<<"Defense fixture "<<transform<<" move="<<defended.move.x<<','<<defended.move.y
@@ -298,6 +311,18 @@ int main() {
         auto reference=fresh.search(switching,switching.getCurrentPlayer(),5000,nullptr,configuration);
         require(warmed.depth==2 && reference.depth==2,"mode-switch comparison incomplete");
         require(warmed.score==reference.score && warmed.move==reference.move,"TT reused incompatible leaf configuration");
+    }
+    Board staged;
+    for(int x=5;x<=7;++x) require(staged.place({x,7},Stone::Black),"open-four cache fixture");
+    for(bool enabled:{false,true,false,true}) {
+        SearchOptions configuration;
+        configuration.maxDepth=4;
+        configuration.defendOpenFour=enabled;
+        auto warmed=reused.search(staged,Stone::White,5000,nullptr,configuration);
+        Evaluator freshEval; MoveGenerator freshGen(freshEval); Searcher fresh(freshEval,freshGen);
+        auto reference=fresh.search(staged,Stone::White,5000,nullptr,configuration);
+        require(warmed.depth==4 && warmed.depth==reference.depth && warmed.score==reference.score &&
+                warmed.move==reference.move,"a different open-four policy contaminated the search");
     }
     std::cout<<"Leaf configuration cache isolation passed\n";
     std::cout<<"Bounded quiescence and static-leaf control passed\n";

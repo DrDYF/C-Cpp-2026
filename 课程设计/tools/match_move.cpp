@@ -20,8 +20,12 @@ int main(int argc,char** argv) {
     }
     if(input.bad() || board.checkWin()!=Stone::Empty || board.getHistory().size()==225) return 4;
     AIEngine engine;
+    SearchOptions options;
+#ifdef GOMOKU_MATCH_DEFEND_OPEN_FOUR
+    options.defendOpenFour=true;
+#endif
     const auto start=std::chrono::steady_clock::now();
-    const auto result=engine.think(board,budget);
+    const auto result=engine.think(board,budget,nullptr,options);
     const auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
     if(result.status!=SearchStatus::Move || !result.move.isValid()) return 5;
     std::ofstream output(argv[2]);

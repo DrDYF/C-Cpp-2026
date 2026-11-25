@@ -116,9 +116,6 @@ int main(int argc,char** argv) {
         Searcher search(searchEvaluation,searchGenerator);
         SearchOptions options;
         options.maxDepth=Depth;
-#ifdef FOUR_THREE_TEST_ENABLED
-        options.retainFourThreeReply=true;
-#endif
         const auto result=search.search(root,root.getCurrentPlayer(),45000,nullptr,options);
         require(root.getHistory()==history && root.getHash()==hash && root.getCurrentPlayer()==Stone::White,
                 "root board was changed");

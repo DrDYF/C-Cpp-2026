@@ -9,7 +9,8 @@ bool Searcher::expired() {
     if((cancel_ && cancel_->load()) || std::chrono::steady_clock::now()>=deadline_) timeUp_=true;
     return timeUp_;
 }
-void Searcher::orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove,bool generated) {
+void Searcher::orderMoves(const Board& board,std::vector<Point>& moves,Stone color,int ply,Point ttMove,
+                          bool generated,const MoveMask* priority) {
     if(!options_.heuristics || moves.size()<2) return;
     std::array<int,225> tiers{};
     std::array<int,225> scores{};
@@ -29,6 +30,7 @@ void Searcher::orderMoves(const Board& board,std::vector<Point>& moves,Stone col
     }
     std::stable_sort(moves.begin(),moves.end(),[&](Point a,Point b) {
         const int ia=a.y*15+a.x, ib=b.y*15+b.x;
+        if(priority && priority->test(ia)!=priority->test(ib)) return priority->test(ia);
         if(tiers[ia]!=tiers[ib]) return tiers[ia]<tiers[ib];
         if(tiers[ia]<=3 && scores[ia]!=scores[ib]) return scores[ia]>scores[ib];
         if(tiers[ia]==6) {
@@ -71,7 +73,9 @@ SearchResult Searcher::search(const Board& board,Stone color,int timeLimitMs,con
     SearchResult result;
     if(board.checkWin()!=Stone::Empty || board.getHistory().size()==225) { result.status=SearchStatus::Terminal; return result; }
     if(cancel_ && cancel_->load()) { result.status=SearchStatus::Cancelled; return result; }
-    auto candidates=moveGen_.generateMoves(board,color,options_.rootCandidates);
+    auto candidates=moveGen_.generateMoves(board,color,options_.rootCandidates,MoveTierMode::Structural,
+                                          nullptr,nullptr,options_.defendOpenFour ?
+                                          MoveTailPolicy::DefendOpenFour : MoveTailPolicy::Standard);
     if(candidates.empty()) {
         for(int y=0;y<15 && candidates.empty();++y) for(int x=0;x<15;++x)
             if(board.at(Point(x,y))==Stone::Empty) { candidates.push_back(Point(x,y)); break; }
@@ -208,10 +212,13 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
         return std::clamp(evaluator_.evaluate(board,color),-SearchScore::Mate/2,SearchScore::Mate/2);
     }
     ++nodes_;
-    const bool retainReply=options_.retainFourThreeReply && ply==1;
+    const bool retainAll=options_.retainForcingFours && !options_.defendOpenFour;
+    const bool retainReply=!retainAll && options_.retainFourThreeReply && ply==1;
     uint64_t hash=board.getHash()^(color==Stone::White ? 0x9e3779b97f4a7c15ULL : 0ULL);
     // 候选不同的节点不能共用分数界，尤其是换手后同一盘面移到了另一层时。
     if(retainReply) hash^=0xd1b54a32d192ed03ULL;
+    if(retainAll) hash^=0x94d049bb133111ebULL;
+    if(options_.defendOpenFour) hash^=0xbf58476d1ce4e5b9ULL;
     int ttScore; Point ttMove; TTEntry::Flag ttFlag;
     const int originalAlpha=alpha;
     if(tt_.probe(hash,depth,ttScore,ttMove,ttFlag,ply)) {
@@ -220,8 +227,12 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
         if(ttFlag==TTEntry::BETA && ttScore>=beta) return ttScore;
     }
     Point omittedFourThree;
+    MoveMask priority;
+    const auto tailPolicy=options_.defendOpenFour ? MoveTailPolicy::DefendOpenFour :
+                          retainAll ? MoveTailPolicy::KeepForcingFours : MoveTailPolicy::Standard;
     auto moves=moveGen_.generateMoves(board,color,12,MoveTierMode::Structural,nullptr,
-                                      retainReply ? &omittedFourThree : nullptr);
+                                     retainReply ? &omittedFourThree : nullptr,tailPolicy,
+                                     options_.defendOpenFour ? &priority : nullptr);
     if(expired()) return 0;
     if(moves.empty()) return 0;
     const int own=color==Stone::Black?0:1;
@@ -246,7 +257,7 @@ int Searcher::negamax(Board& board,Stone color,int depth,int alpha,int beta,int 
         moves.push_back(omittedFourThree);
     }
     tt_.probe(hash,0,ttScore,ttMove,ttFlag,ply);
-    orderMoves(board,moves,color,ply,ttMove,generated);
+    orderMoves(board,moves,color,ply,ttMove,generated,priority.any() ? &priority : nullptr);
     int bestScore=-INF; Point bestMove=moves.front(); bool first=true;
     for(Point move:moves) {
         if(expired()) return 0;
